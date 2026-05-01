@@ -1,0 +1,47 @@
+figure "Attention Mechanism" [theme: academic]:
+
+  /* Multi-head attention with ML components,
+     math labels, bezier arrows, and ghosting */
+
+  container Inputs [flow-h, gap: 20mm]:
+    QInput [box, label: "$\mathbf{Q}$", fill: accent-blue]
+    KInput [box, label: "$\mathbf{K}$", fill: accent-blue]
+    VInput [box, label: "$\mathbf{V}$", fill: accent-blue]
+
+  container Projections [flow-h, gap: 15mm]:
+    WQ [box, label: "$\mathbf{W}_Q$"]
+    WK [box, label: "$\mathbf{W}_K$"]
+    WV [box, label: "$\mathbf{W}_V$"]
+
+  Projections.top = Inputs.bottom + 12mm
+
+  // Attention computation
+  Scores [box, label: "$\text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)$", fill: accent-orange]
+  Scores.top = Projections.bottom + 12mm
+  Scores.center-x = Inputs.center-x
+
+  MulNode [multiply]
+  MulNode.top = Scores.bottom + 10mm
+  MulNode.center-x = Scores.center-x
+
+  Output [box, label: "$\text{MultiHead}(Q, K, V)$", fill: accent-green]
+  Output.top = MulNode.bottom + 10mm
+  Output.center-x = MulNode.center-x
+
+  // Ghosted baseline for comparison
+  container Baseline [flow-v, gap: 5mm, ghost: true]:
+    B1 [box, label: "Standard Attention"]
+    B2 [box, label: "Single Head"]
+
+  Baseline.left = Output.right + 30mm
+  Baseline.center-y = Output.center-y
+
+  // Arrows
+  arrow QInput -> WQ [bezier]
+  arrow KInput -> WK [bezier]
+  arrow VInput -> WV [bezier]
+  arrow WQ -> Scores [solid, label: "$QK^T$"]
+  arrow WK -> Scores [solid]
+  arrow WV -> MulNode [solid, label: "attend"]
+  arrow Scores -> MulNode [orthogonal]
+  arrow MulNode -> Output [solid]
