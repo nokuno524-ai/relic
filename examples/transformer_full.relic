@@ -1,0 +1,41 @@
+figure "Transformer Architecture" [theme: academic, width: 25cm]:
+
+  container EncoderStack [flow-v, gap: 8mm]:
+    InputEmbed [box, label: "Input Embedding", fill: bg-white]
+    PosEncEnc [box, label: "Positional Encoding", fill: accent-blue]
+    MHA_Enc [box, label: "Multi-Head Attention", fill: accent-orange]
+    AddNorm1_Enc [box, label: "Add and Norm", fill: bg-light]
+    FFN_Enc [box, label: "Feed Forward", fill: accent-green]
+    AddNorm2_Enc [box, label: "Add and Norm", fill: bg-light]
+
+  container DecoderStack [flow-v, gap: 8mm]:
+    OutputEmbed [box, label: "Output Embedding", fill: bg-white]
+    PosEncDec [box, label: "Positional Encoding", fill: accent-blue]
+    MaskedMHA [box, label: "Masked Multi-Head Attention", fill: accent-orange]
+    AddNorm1_Dec [box, label: "Add and Norm", fill: bg-light]
+    CrossMHA [box, label: "Multi-Head Attention", fill: accent-orange]
+    AddNorm2_Dec [box, label: "Add and Norm", fill: bg-light]
+    FFN_Dec [box, label: "Feed Forward", fill: accent-green]
+    AddNorm3_Dec [box, label: "Add and Norm", fill: bg-light]
+    Linear [box, label: "Linear", fill: bg-white]
+    Softmax [box, label: "Softmax", fill: accent-purple]
+
+  DecoderStack.left = EncoderStack.right + 40mm
+  DecoderStack.bottom = EncoderStack.bottom
+
+  arrow AddNorm2_Enc -> CrossMHA [dashed, label: "K, V"]
+
+  arrow PosEncEnc -> AddNorm1_Enc [dashed]
+  arrow AddNorm1_Enc -> AddNorm2_Enc [dashed]
+
+  arrow PosEncDec -> AddNorm1_Dec [dashed]
+  arrow AddNorm1_Dec -> AddNorm2_Dec [dashed]
+  arrow AddNorm2_Dec -> AddNorm3_Dec [dashed]
+
+  InputLabel [box, label: "Inputs"]
+  InputLabel.bottom = InputEmbed.top + 10mm
+  arrow InputLabel -> InputEmbed [solid]
+
+  OutputLabel [box, label: "Output Probabilities"]
+  OutputLabel.top = Softmax.bottom + 10mm
+  arrow Softmax -> OutputLabel [solid]
