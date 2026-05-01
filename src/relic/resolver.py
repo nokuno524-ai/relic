@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 from .ast_nodes import (
     ArrowDecl, ContainerDecl, ConstraintExpr, FigureDecl, ObjectDecl,
 )
@@ -78,7 +80,10 @@ class Resolver:
             for c in constraints:
                 self._apply_constraint(c)
 
-        # Fifth pass: compute relative positioning metadata
+        # Fifth pass: resolve overlaps
+        self._resolve_overlaps()
+
+        # Sixth pass: compute relative positioning metadata
         self._compute_positioning_metadata(dag)
 
         return FlatIR(
@@ -238,6 +243,59 @@ class Resolver:
         offset_mm = _offset_to_mm(c.offset, c.offset_unit)
         value = source.get_anchor(c.source_anchor) + offset_mm
         target.set_anchor(c.target_anchor, value)
+
+    def _resolve_overlaps(self, max_iterations: int = 50):
+        """Post-resolution pass: detect and fix overlapping objects."""
+        for iteration in range(max_iterations):
+            moved = False
+            # Get all non-container, non-ghost objects
+            leaf_objects = [
+                (name, obj) for name, obj in self.objects.items()
+                if obj.obj_type != ObjType.CONTAINER
+                and not (0 < obj.opacity < 0.5)  # skip ghosted
+            ]
+
+            for i, (name_a, a) in enumerate(leaf_objects):
+                for j, (name_b, b) in enumerate(leaf_objects):
+                    if i >= j:
+                        continue
+                    # Skip siblings in the same flow container
+                    if a.parent and a.parent == b.parent:
+                        parent_obj = self.objects.get(a.parent)
+                        if parent_obj and parent_obj.layout in ("flow-v", "flow-h", ""):
+                            continue
+
+                    # Compute overlap
+                    overlap_x = min(a.right, b.right) - max(a.left, b.left)
+                    overlap_y = min(a.top, b.top) - max(a.bottom, b.bottom)
+
+                    if overlap_x > 0 and overlap_y > 0:
+                        moved = True
+                        print(
+                            f"[resolver] Overlap detected: '{name_a}' and '{name_b}' "
+                            f"(overlap {overlap_x:.1f}x{overlap_y:.1f}mm)",
+                            file=sys.stderr,
+                        )
+                        # Push apart along the axis with less overlap
+                        if overlap_x < overlap_y:
+                            push = overlap_x / 2 + 2.0
+                            if a.x <= b.x:
+                                a.x -= push
+                                b.x += push
+                            else:
+                                a.x += push
+                                b.x -= push
+                        else:
+                            push = overlap_y / 2 + 2.0
+                            if a.y <= b.y:
+                                a.y -= push
+                                b.y += push
+                            else:
+                                a.y += push
+                                b.y -= push
+
+            if not moved:
+                break
 
     def _compute_positioning_metadata(self, dag: DAG):
         """Analyze constraints to determine relative positioning for TikZ."""
