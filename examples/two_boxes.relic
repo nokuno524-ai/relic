@@ -1,0 +1,5 @@
+figure "Two Boxes" [theme: academic, width: 12cm]:
+  A [box, label: "Box A"]
+  B [box, label: "Box B"]
+  B.left = A.right + 25mm
+  B.center-y = A.center-y

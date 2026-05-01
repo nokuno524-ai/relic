@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "relic"
+version = "0.1.0"
+description = "Relational layout language for academic figures that compiles to TikZ"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+relic = "relic.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/relic"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

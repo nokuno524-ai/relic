@@ -1,0 +1,11 @@
+figure "Transformer" [theme: academic, width: 14cm]:
+  container Encoder [flow-v, gap: 6mm]:
+    Input  [box, label: "Source Tokens"]
+    Embed  [box, label: "Embedding"]
+  
+  container Decoder [flow-v, gap: 6mm]:
+    DecIn  [box, label: "Target Tokens"]
+    DecOut [box, label: "Output"]
+  
+  Decoder.left = Encoder.right + 25mm
+  Decoder.center-y = Encoder.center-y

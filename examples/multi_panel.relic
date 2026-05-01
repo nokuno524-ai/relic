@@ -1,0 +1,17 @@
+figure "Multi Panel" [theme: academic, width: 16cm]:
+  container PanelA [flow-h, gap: 10mm]:
+    A1 [box, label: "A1"]
+    A2 [box, label: "A2"]
+  
+  container PanelB [flow-v, gap: 6mm]:
+    B1 [box, label: "B1"]
+    B2 [box, label: "B2"]
+  
+  container PanelC [flow-h, gap: 8mm]:
+    C1 [box, label: "C1"]
+    C2 [circle, label: "C2"]
+  
+  PanelB.left = PanelA.right + 30mm
+  PanelB.center-y = PanelA.center-y
+  PanelC.left = PanelB.right + 30mm
+  PanelC.center-y = PanelB.center-y

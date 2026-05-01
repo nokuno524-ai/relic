@@ -1,0 +1,2 @@
+figure "Minimal" [theme: academic, width: 8cm]:
+  Box1 [box, label: "Hello World"]
