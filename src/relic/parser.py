@@ -114,6 +114,8 @@ class Parser:
         props = self._parse_bracket_props() if self.peek().type == TokenType.LBRACKET else []
         style = ""
         label = ""
+        route = ""
+        label_pos = 0.5
         for p in props:
             if p.key == "style":
                 style = str(p.value)
@@ -121,7 +123,11 @@ class Parser:
                 label = str(p.value)
             elif p.key in ("dashed", "dotted", "solid"):
                 style = p.key
-        return ArrowDecl(source=src_tok.value, target=tgt_tok.value, style=style, label=label, properties=props, line=src_tok.line)
+            elif p.key in ("bezier", "orthogonal"):
+                route = p.key
+            elif p.key == "label-pos":
+                label_pos = float(p.value) if isinstance(p.value, (int, float)) else float(str(p.value))
+        return ArrowDecl(source=src_tok.value, target=tgt_tok.value, style=style, label=label, route=route, label_pos=label_pos, properties=props, line=src_tok.line)
 
     def _parse_object_or_constraint(self) -> ObjectDecl | ConstraintExpr:
         """Parse either an object declaration or a constraint assignment."""
@@ -160,7 +166,8 @@ class Parser:
         obj_type = "box"
         remaining_props = []
         for p in props:
-            if p.key in ("box", "circle", "diamond", "ellipse"):
+            if p.key in ("box", "circle", "diamond", "ellipse", "image",
+                         "add", "multiply", "concat", "softmax", "dropout"):
                 obj_type = p.key
             else:
                 remaining_props.append(p)

@@ -9,16 +9,42 @@ _KEYWORDS = {"figure", "container", "panel", "grid", "arrow"}
 _UNITS = {"mm", "cm", "pt", "%"}
 
 
+def _strip_comments(source: str) -> str:
+    """Remove // line comments and /* */ block comments from source."""
+    result: list[str] = []
+    i = 0
+    n = len(source)
+    while i < n:
+        # Block comment
+        if i + 1 < n and source[i] == '/' and source[i + 1] == '*':
+            i += 2
+            while i + 1 < n and not (source[i] == '*' and source[i + 1] == '/'):
+                if source[i] == '\n':
+                    result.append('\n')  # preserve line breaks for indent tracking
+                i += 1
+            i += 2  # skip */
+            continue
+        # Line comment
+        if i + 1 < n and source[i] == '/' and source[i + 1] == '/':
+            while i < n and source[i] != '\n':
+                i += 1
+            continue
+        result.append(source[i])
+        i += 1
+    return ''.join(result)
+
+
 def tokenize(source: str) -> list[Token]:
     """Tokenize Relic source into a list of tokens."""
     tokens: list[Token] = []
+    source = _strip_comments(source)
     lines = source.split("\n")
     indent_stack: list[int] = [0]
 
     for lineno, line_text in enumerate(lines, 1):
         # Skip blank lines and comments
         stripped = line_text.rstrip()
-        if not stripped or stripped.lstrip().startswith("#"):
+        if not stripped:
             continue
 
         # Compute indent

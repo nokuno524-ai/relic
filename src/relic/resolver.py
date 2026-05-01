@@ -12,6 +12,15 @@ from .ir import FlatIR
 from .objects import ArrowObject, LayoutObject, ObjType
 
 
+_ML_TYPE_MAP = {
+    "add": ObjType.ML_ADD,
+    "multiply": ObjType.ML_MULTIPLY,
+    "concat": ObjType.ML_CONCAT,
+    "softmax": ObjType.ML_SOFTMAX,
+    "dropout": ObjType.ML_DROPOUT,
+}
+
+
 _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "pt": 0.3528, "%": 1.0}
 
 
@@ -89,14 +98,17 @@ class Resolver:
             elif isinstance(child, ArrowDecl):
                 self.arrows.append(ArrowObject(
                     source=child.source, target=child.target,
-                    style=child.style, label=child.label, line=child.line,
+                    style=child.style, label=child.label,
+                    route=child.route, label_pos=child.label_pos,
+                    line=child.line,
                 ))
 
     def _register_object(self, decl: ObjectDecl, parent: str = ""):
         props = _resolve_props(decl)
+        obj_type = _ML_TYPE_MAP.get(decl.obj_type) or ObjType[decl.obj_type.upper()]
         obj = LayoutObject(
             name=decl.name,
-            obj_type=ObjType[decl.obj_type.upper()],
+            obj_type=obj_type,
             label=str(props.get("label", decl.name)),
             fill=str(props.get("fill", "")),
             parent=parent,
@@ -109,6 +121,17 @@ class Resolver:
             obj.width = float(props["width"])
         if "height" in props and isinstance(props["height"], (int, float)):
             obj.height = float(props["height"])
+        if obj_type == ObjType.IMAGE:
+            obj.src = str(props.get("src", ""))
+            # For images, 'width' is the image display width (e.g., '30mm')
+            w = props.get("width", "")
+            if isinstance(w, str) and any(w.endswith(u) for u in ('mm', 'cm', 'pt')):
+                obj.image_width = w
+        # Opacity
+        if "ghost" in props and props["ghost"]:
+            obj.opacity = 0.2
+        elif "opacity" in props:
+            obj.opacity = float(props["opacity"])
         self.objects[decl.name] = obj
         self._register_children(decl.children)
 
@@ -127,6 +150,11 @@ class Resolver:
             parent=parent,
             label=str(props.get("label", "")),
         )
+        # Opacity for containers
+        if "ghost" in props and props["ghost"]:
+            obj.opacity = 0.2
+        elif "opacity" in props:
+            obj.opacity = float(props["opacity"])
         self.objects[decl.name] = obj
 
         for child in decl.children:

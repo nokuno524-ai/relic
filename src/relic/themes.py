@@ -52,6 +52,20 @@ THEMES: dict[str, Theme] = {
     "academic": ACADEMIC_THEME,
 }
 
+NORD_THEME = Theme(
+    name="nord",
+    colors={
+        "primary": "#5E81AC",
+        "secondary": "#81A1C1",
+        "accent": "#BF616A",
+        "neutral": "#4C566A",
+        "light": "#ECEFF4",
+        "bg": "#2E3440",
+    },
+)
+
+THEMES["nord"] = NORD_THEME
+
 
 def get_theme(name: str) -> Theme:
     return THEMES.get(name, ACADEMIC_THEME)

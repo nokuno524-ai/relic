@@ -90,6 +90,8 @@ class ArrowDecl:
     target: str
     style: str = ""  # solid, dashed, dotted
     label: str = ""
+    route: str = ""  # bezier, orthogonal, or "" (default straight)
+    label_pos: float = 0.5  # 0.0=near source, 0.5=midpoint, 1.0=near target
     properties: list[PropertyPair] = field(default_factory=list)
     line: int = 0
 

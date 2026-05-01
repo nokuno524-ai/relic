@@ -12,6 +12,12 @@ class ObjType(Enum):
     DIAMOND = auto()
     ELLIPSE = auto()
     CONTAINER = auto()
+    IMAGE = auto()
+    ML_ADD = auto()
+    ML_MULTIPLY = auto()
+    ML_CONCAT = auto()
+    ML_SOFTMAX = auto()
+    ML_DROPOUT = auto()
 
 
 @dataclass
@@ -43,6 +49,11 @@ class LayoutObject:
     # For dual-axis positioning (e.g., below + align center-x)
     pos_align_direction: str = ""  # "center-x" or "center-y"
     pos_align_reference: str = ""
+
+    # Image-specific
+    src: str = ""
+    image_width: str = ""  # e.g. "30mm"
+    opacity: float = 0.0  # 0 = fully transparent, 1 = opaque (0 = not set)
 
     # Anchors (computed)
     resolved: bool = False
@@ -125,4 +136,6 @@ class ArrowObject:
     target: str
     style: str = ""
     label: str = ""
+    route: str = ""  # bezier, orthogonal, or ""
+    label_pos: float = 0.5
     line: int = 0

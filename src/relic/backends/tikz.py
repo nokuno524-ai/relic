@@ -14,6 +14,12 @@ _OBJ_TYPE_TO_TIKZ = {
     ObjType.DIAMOND: "diamond",
     ObjType.ELLIPSE: "ellipse",
     ObjType.CONTAINER: "rectangle",
+    ObjType.IMAGE: "rectangle",
+    ObjType.ML_ADD: "circle",
+    ObjType.ML_MULTIPLY: "circle",
+    ObjType.ML_CONCAT: "rectangle",
+    ObjType.ML_SOFTMAX: "rectangle",
+    ObjType.ML_DROPOUT: "rectangle",
 }
 
 # Regex patterns for math mode detection
@@ -33,9 +39,18 @@ _MATH_TOKEN = re.compile(
 )
 
 
+def _has_math_mode(label: str) -> bool:
+    """Check if the label already contains $...$ math delimiters."""
+    return '$' in label
+
+
 def _wrap_math(label: str) -> str:
     """Detect math symbols in a label and wrap them in $...$."""
     if not label:
+        return label
+
+    # If label already has $ delimiters, leave it alone
+    if _has_math_mode(label):
         return label
 
     # Find all math tokens and their positions
@@ -117,16 +132,44 @@ def generate_tikz(ir: FlatIR) -> str:
             fill = theme.resolve_color(obj.fill)
             style += f", fill={fill}"
 
+        # Handle image type
+        if obj.obj_type == ObjType.IMAGE:
+            img_opts = ["inner sep=0pt"]
+            if obj.image_width:
+                img_opts.append(f"width={obj.image_width}")
+            img_cmd = f"\\includegraphics[{', '.join(img_opts)}]{{{obj.src}}}"
+            if obj.pos_direction and obj.pos_reference:
+                dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
+                lines.append(f"  \\node[inner sep=0pt, {obj.pos_direction}={dist} of {obj.pos_reference}] ({name}) {{{img_cmd}}};")
+            else:
+                lines.append(f"  \\node[inner sep=0pt] ({name}) {{{img_cmd}}};")
+            continue
+
+        # Handle ML components
+        ml_style, ml_label = _ml_component_style(obj.obj_type)
+        if ml_style is not None:
+            if obj.pos_direction and obj.pos_reference:
+                dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
+                lines.append(f"  \\node[{ml_style}, {obj.pos_direction}={dist} of {obj.pos_reference}] ({name}) {{{ml_label}}};")
+            else:
+                lines.append(f"  \\node[{ml_style}] ({name}) {{{ml_label}}};")
+            continue
+
         label = _format_label(obj.label if obj.label else name)
+
+        # Opacity
+        opacity_part = ""
+        if obj.opacity > 0:
+            opacity_part = f", opacity={obj.opacity}, fill opacity={obj.opacity}"
 
         # Positioning: use relative positioning everywhere except anchor
         if obj.pos_direction and obj.pos_reference:
             # Relative positioning
             dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
-            lines.append(f"  \\node[{style}, {obj.pos_direction}={dist} of {obj.pos_reference}] ({name}) {{{label}}};")
+            lines.append(f"  \\node[{style}, {obj.pos_direction}={dist} of {obj.pos_reference}{opacity_part}] ({name}) {{{label}}};")
         else:
             # Anchor node at origin
-            lines.append(f"  \\node[{style}] ({name}) {{{label}}};")
+            lines.append(f"  \\node[{style}{opacity_part}] ({name}) {{{label}}};")
 
     lines.append("")
 
@@ -168,11 +211,31 @@ def generate_tikz(ir: FlatIR) -> str:
             style_parts.append("dotted")
 
         style = ", ".join(style_parts)
+
+        # Label with position
         label_part = ""
         if arrow.label:
-            label_part = f" node[midway, above, font=\\small] {{{_format_label(arrow.label)}}}"
+            pos = arrow.label_pos
+            pos_desc = "midway"
+            if pos < 0.4:
+                pos_desc = "near start"
+            elif pos > 0.6:
+                pos_desc = "near end"
+            label_part = f" node[{pos_desc}, above, font=\\small] {{{_format_label(arrow.label)}}}"
 
-        lines.append(f"  \\draw[{style}] ({arrow.source}) -- ({arrow.target}){label_part};")
+        if arrow.route == "bezier":
+            # Calculate angles based on relative position
+            src_obj = ir.objects.get(arrow.source)
+            tgt_obj = ir.objects.get(arrow.target)
+            out_angle, in_angle = _bezier_angles(src_obj, tgt_obj)
+            lines.append(f"  \\draw[{style}] ({arrow.source}) to[out={out_angle}, in={in_angle}] ({arrow.target}){label_part};")
+        elif arrow.route == "orthogonal":
+            src_obj = ir.objects.get(arrow.source)
+            tgt_obj = ir.objects.get(arrow.target)
+            connector = _orthogonal_connector(src_obj, tgt_obj)
+            lines.append(f"  \\draw[{style}] ({arrow.source}) {connector} ({arrow.target}){label_part};")
+        else:
+            lines.append(f"  \\draw[{style}] ({arrow.source}) -- ({arrow.target}){label_part};")
 
     lines.append("")
     lines.append(r"\end{tikzpicture}")
@@ -183,6 +246,9 @@ def generate_tikz(ir: FlatIR) -> str:
 
 def _format_label(label: str) -> str:
     """Format a label: wrap math, escape LaTeX."""
+    if _has_math_mode(label):
+        # Label already has $...$ math — skip wrapping, do minimal escaping
+        return _escape_latex(label)
     label = _wrap_math(label)
     return _escape_latex(label)
 
@@ -223,6 +289,9 @@ def _escape_latex(text: str) -> str:
 
 def _color_to_hex(color: str) -> str:
     """Try to convert color spec to hex."""
+    # Already a hex color
+    if color.startswith('#'):
+        return color[1:]
     color_map = {
         "blue!60!black": "0000CC",
         "red!70!black": "CC0000",
@@ -235,3 +304,51 @@ def _color_to_hex(color: str) -> str:
         "gray!70!black": "4D4D4D",
     }
     return color_map.get(color, "333333")
+
+
+def _ml_component_style(obj_type) -> tuple[str | None, str]:
+    """Return (tikz_style, label) for ML component types, or (None, '') for non-ML types."""
+    from ..objects import ObjType
+    if obj_type == ObjType.ML_ADD:
+        return "circle, draw, minimum size=8mm, inner sep=0pt", r"$\oplus$"
+    if obj_type == ObjType.ML_MULTIPLY:
+        return "circle, draw, minimum size=8mm, inner sep=0pt", r"$\otimes$"
+    if obj_type == ObjType.ML_CONCAT:
+        return "rectangle, draw, fill=blue!10, minimum width=10mm, minimum height=12mm, rounded corners=2pt", "Concat"
+    if obj_type == ObjType.ML_SOFTMAX:
+        return "rectangle, draw, fill=purple!20, rounded corners=4pt, minimum width=25mm, minimum height=8mm", "Softmax"
+    if obj_type == ObjType.ML_DROPOUT:
+        return "rectangle, draw, fill=orange!10, minimum width=20mm, minimum height=8mm, rounded corners=2pt", "Dropout"
+    return None, ""
+
+
+def _bezier_angles(src_obj, tgt_obj) -> tuple[int, int]:
+    """Calculate out/in angles for bezier arrows based on relative positions."""
+    if src_obj is None or tgt_obj is None:
+        return 0, 180
+    dx = tgt_obj.x - src_obj.x
+    dy = tgt_obj.y - src_obj.y
+    if abs(dx) >= abs(dy):
+        # Primarily horizontal
+        if dx >= 0:
+            return 0, 180
+        else:
+            return 180, 0
+    else:
+        # Primarily vertical
+        if dy >= 0:
+            return 90, 270
+        else:
+            return 270, 90
+
+
+def _orthogonal_connector(src_obj, tgt_obj) -> str:
+    """Choose -| or |- based on relative positions."""
+    if src_obj is None or tgt_obj is None:
+        return "-|"
+    dx = abs(tgt_obj.x - src_obj.x)
+    dy = abs(tgt_obj.y - src_obj.y)
+    if dx >= dy:
+        return "-|"  # horizontal first, then vertical
+    else:
+        return "|-"  # vertical first, then horizontal

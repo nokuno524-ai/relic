@@ -1,0 +1,34 @@
+// Relic v0.2 Feature Demo
+/* This example exercises all new features:
+   comments, math labels, images, ML components,
+   bezier/orthogonal arrows, and opacity */
+
+figure "v0.2 Features" [theme: academic]:
+
+  // Input image
+  InputImg [image, src: "input.png"]
+
+  // ML operations
+  Add [add]
+  Mul [multiply]
+  SM [softmax]
+  Drop [dropout]
+  Cat [concat]
+
+  // Ghosted background node
+  Ghost [box, label: "Background", ghost: true]
+
+  // Math labels
+  WQ [box, label: "$\mathbf{W}_Q$"]
+  WK [box, label: "$\mathbf{W}_K$"]
+
+  // Positioning
+  Add.center-x = InputImg.center-x
+  Add.top = InputImg.bottom - 8mm
+  Mul.left = Add.right + 20mm
+  Mul.center-y = Add.center-y
+
+  // Arrows with routing
+  arrow InputImg -> Add [bezier]
+  arrow Add -> SM [orthogonal]
+  arrow Mul -> Drop [dashed, label: "output", label-pos: 0.3]
