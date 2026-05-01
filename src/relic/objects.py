@@ -36,6 +36,14 @@ class LayoutObject:
     gap: float = 6.0  # mm
     children: list[str] = field(default_factory=list)  # child names
     parent: str = ""
+    # Relative positioning metadata (set by resolver)
+    pos_direction: str = ""  # "below", "above", "right", "left"
+    pos_reference: str = ""  # name of reference object
+    pos_distance: float = 0.0  # distance in mm
+    # For dual-axis positioning (e.g., below + align center-x)
+    pos_align_direction: str = ""  # "center-x" or "center-y"
+    pos_align_reference: str = ""
+
     # Anchors (computed)
     resolved: bool = False
 

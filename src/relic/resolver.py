@@ -69,6 +69,9 @@ class Resolver:
             for c in constraints:
                 self._apply_constraint(c)
 
+        # Fifth pass: compute relative positioning metadata
+        self._compute_positioning_metadata(dag)
+
         return FlatIR(
             objects=self.objects,
             arrows=self.arrows,
@@ -175,13 +178,15 @@ class Resolver:
         is_horizontal = container.layout == "flow-h"
 
         for i, cname in enumerate(child_names):
-            # First child aligns to container top (vertical) or left (horizontal)
+            # First child aligns to container
             if i == 0:
                 if is_vertical:
                     self.constraints.append(Constraint(cname, "center-x", container.name, "center-x"))
-                    # top child aligns top with container top
+                    # Align first child's top to container top
+                    self.constraints.append(Constraint(cname, "top", container.name, "top"))
                 elif is_horizontal:
                     self.constraints.append(Constraint(cname, "center-y", container.name, "center-y"))
+                    self.constraints.append(Constraint(cname, "left", container.name, "left"))
             else:
                 prev = child_names[i - 1]
                 if is_vertical:
@@ -205,6 +210,44 @@ class Resolver:
         offset_mm = _offset_to_mm(c.offset, c.offset_unit)
         value = source.get_anchor(c.source_anchor) + offset_mm
         target.set_anchor(c.target_anchor, value)
+
+    def _compute_positioning_metadata(self, dag: DAG):
+        """Analyze constraints to determine relative positioning for TikZ."""
+        for name in self.objects:
+            obj = self.objects[name]
+            if obj.obj_type == ObjType.CONTAINER:
+                continue
+            constraints = dag.get_constraints_for(name)
+            primary = None
+            align = None
+            for c in constraints:
+                # Directional constraints
+                direction = _constraint_to_direction(c)
+                if direction:
+                    dist = abs(_offset_to_mm(c.offset, c.offset_unit))
+                    primary = (direction, c.source_name, dist)
+                elif c.target_anchor in ("center-x",) and c.source_anchor in ("center-x",):
+                    align = ("center-x", c.source_name)
+                elif c.target_anchor in ("center-y",) and c.source_anchor in ("center-y",):
+                    align = ("center-y", c.source_name)
+            if primary:
+                obj.pos_direction, obj.pos_reference, obj.pos_distance = primary
+            if align:
+                obj.pos_align_direction, obj.pos_align_reference = align
+
+
+def _constraint_to_direction(c: Constraint) -> str | None:
+    """Map a constraint to a TikZ positioning direction."""
+    # target.top = source.bottom ± offset → "below"
+    if c.target_anchor == "top" and c.source_anchor == "bottom":
+        return "below"
+    if c.target_anchor == "bottom" and c.source_anchor == "top":
+        return "above"
+    if c.target_anchor == "left" and c.source_anchor == "right":
+        return "right"
+    if c.target_anchor == "right" and c.source_anchor == "left":
+        return "left"
+    return None
 
 
 def _parse_dimension(val: str) -> float:

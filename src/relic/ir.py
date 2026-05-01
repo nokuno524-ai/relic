@@ -16,6 +16,46 @@ class FlatIR:
     width: float = 140.0  # mm
     height: float = 100.0  # mm
 
+    @property
+    def containers(self) -> dict[str, list[str]]:
+        """Map container name -> list of non-container child names."""
+        result = {}
+        for name, obj in self.objects.items():
+            if obj.obj_type == ObjType.CONTAINER and obj.children:
+                kids = []
+                for cname in obj.children:
+                    child = self.objects.get(cname)
+                    if child and child.obj_type != ObjType.CONTAINER:
+                        kids.append(cname)
+                    elif child and child.obj_type == ObjType.CONTAINER:
+                        # recurse to get leaf children
+                        kids.extend(self._leaf_children(cname))
+                result[name] = kids
+        return result
+
+    def _leaf_children(self, container_name: str) -> list[str]:
+        obj = self.objects.get(container_name)
+        if not obj or not obj.children:
+            return []
+        leaves = []
+        for cname in obj.children:
+            child = self.objects.get(cname)
+            if child and child.obj_type == ObjType.CONTAINER:
+                leaves.extend(self._leaf_children(cname))
+            else:
+                leaves.append(cname)
+        return leaves
+
+    @property
+    def container_meta(self) -> dict[str, "tuple[str, str, list[str]]"]:
+        """Map container name -> (layout, label, child_names) for non-container children."""
+        result = {}
+        for name, obj in self.objects.items():
+            if obj.obj_type == ObjType.CONTAINER:
+                leaves = self._leaf_children(name)
+                result[name] = (obj.layout, obj.label, leaves)
+        return result
+
     def to_dict(self) -> dict:
         """Serialize to a JSON-like dict."""
         objs = {}
