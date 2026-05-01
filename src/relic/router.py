@@ -54,13 +54,11 @@ class ArrowRouter:
         dy = tgt.y - src.y
 
         if abs(dx) >= abs(dy):
-            # Primarily horizontal
             if dx >= 0:
                 return "right", "left"
             else:
                 return "left", "right"
         else:
-            # Primarily vertical
             if dy >= 0:
                 return "top", "bottom"
             else:
@@ -94,7 +92,6 @@ class ArrowRouter:
                 continue
             if obj.obj_type == ObjType.CONTAINER:
                 continue
-            # Skip ghosted objects
             if 0 < obj.opacity < 0.5:
                 continue
             if self._line_intersects_box(start, end, obj):
@@ -108,26 +105,22 @@ class ArrowRouter:
         obj: LayoutObject,
     ) -> bool:
         """Check if line segment (start→end) intersects the object's bounding box."""
-        # Use separating axis theorem with the line segment vs AABB
         sx, sy = start
         ex, ey = end
         left, right = obj.left, obj.right
         bottom, top = obj.bottom, obj.top
 
-        # Check if either endpoint is inside the box
         if left <= sx <= right and bottom <= sy <= top:
             return True
         if left <= ex <= right and bottom <= ey <= top:
             return True
 
-        # Parametric line: P(t) = start + t * (end - start), t in [0, 1]
         dx = ex - sx
         dy = ey - sy
 
         tmin = 0.0
         tmax = 1.0
 
-        # Check X slab
         if abs(dx) < 1e-10:
             if sx < left or sx > right:
                 return False
@@ -141,7 +134,6 @@ class ArrowRouter:
             if tmin > tmax:
                 return False
 
-        # Check Y slab
         if abs(dy) < 1e-10:
             if sy < bottom or sy > top:
                 return False
@@ -163,51 +155,100 @@ class ArrowRouter:
         end: tuple[float, float],
         obstacles: list[LayoutObject],
     ) -> list[Waypoint]:
-        """Generate S-bend waypoints for orthogonal routing."""
+        """Generate clean L-bend or Z-bend waypoints for orthogonal routing.
+        
+        Only returns the INTERMEDIATE bend points, not the start/end.
+        The TikZ backend will draw: source_anchor -> waypoints -> target_anchor.
+        """
         sx, sy = start
         ex, ey = end
 
-        # Compute a midpoint offset to go around obstacles
-        # Use the perpendicular direction to offset
-        dx = ex - sx
-        dy = ey - sy
+        if abs(sx - ex) < 0.01 and abs(sy - ey) < 0.01:
+            # Same point
+            return []
 
-        # Determine primary direction and offset perpendicular
-        if abs(dx) >= abs(dy):
-            # Horizontal primary — offset vertically
-            # Find max obstacle extent to determine offset
-            max_y_extent = 0.0
-            for obs in obstacles:
-                max_y_extent = max(max_y_extent, obs.top, obs.bottom)
-            mid_x = (sx + ex) / 2
+        # Try L-bend: go horizontal to target x, then vertical to target y
+        # Corner point: (ex, sy) — source goes horizontal, then turns down/up to target
+        corner1 = (ex, sy)
+        h_clear = not any(
+            self._line_intersects_box((sx, sy), corner1, obs)
+            for obs in obstacles
+        )
+        v_clear = not any(
+            self._line_intersects_box(corner1, (ex, ey), obs)
+            for obs in obstacles
+        )
+        if h_clear and v_clear:
+            return [Waypoint(x=ex, y=sy, type="corner")]
 
-            # Offset above or below based on where there's more room
-            offset = max(obs.height for obs in obstacles) / 2 + _ESCAPE_PADDING + 2.0
-            if sy >= 0:
-                offset_y = max(obs.top for obs in obstacles) + offset
-            else:
-                offset_y = min(obs.bottom for obs in obstacles) - offset
+        # Try the other L-bend: go vertical first, then horizontal
+        corner2 = (sx, ey)
+        v_clear2 = not any(
+            self._line_intersects_box((sx, sy), corner2, obs)
+            for obs in obstacles
+        )
+        h_clear2 = not any(
+            self._line_intersects_box(corner2, (ex, ey), obs)
+            for obs in obstacles
+        )
+        if v_clear2 and h_clear2:
+            return [Waypoint(x=sx, y=ey, type="corner")]
 
+        # Both L-bends blocked — use Z-bend (3 segments)
+        # Find a clear horizontal channel
+        # Try above all obstacles
+        max_obs_top = max(obs.top for obs in obstacles) + _ESCAPE_PADDING + 2.0
+        # Try below all obstacles  
+        min_obs_bottom = min(obs.bottom for obs in obstacles) - _ESCAPE_PADDING - 2.0
+        
+        mid_x = (sx + ex) / 2
+
+        # Try Z-bend going above
+        above_y = max_obs_top
+        seg1_clear = not any(
+            self._line_intersects_box((sx, sy), (sx, above_y), obs)
+            for obs in obstacles
+        )
+        seg2_clear = not any(
+            self._line_intersects_box((sx, above_y), (ex, above_y), obs)
+            for obs in obstacles
+        )
+        seg3_clear = not any(
+            self._line_intersects_box((ex, above_y), (ex, ey), obs)
+            for obs in obstacles
+        )
+        if seg1_clear and seg2_clear and seg3_clear:
             return [
-                Waypoint(x=mid_x, y=sy, type="corner"),
-                Waypoint(x=mid_x, y=offset_y, type="corner"),
-                Waypoint(x=mid_x, y=ey, type="corner"),
+                Waypoint(x=sx, y=above_y, type="corner"),
+                Waypoint(x=ex, y=above_y, type="corner"),
             ]
-        else:
-            # Vertical primary — offset horizontally
-            offset = max(obs.width for obs in obstacles) / 2 + _ESCAPE_PADDING + 2.0
-            mid_y = (sy + ey) / 2
 
-            if sx >= 0:
-                offset_x = max(obs.right for obs in obstacles) + offset
-            else:
-                offset_x = min(obs.left for obs in obstacles) - offset
-
+        # Try Z-bend going below
+        below_y = min_obs_bottom
+        seg1_clear = not any(
+            self._line_intersects_box((sx, sy), (sx, below_y), obs)
+            for obs in obstacles
+        )
+        seg2_clear = not any(
+            self._line_intersects_box((sx, below_y), (ex, below_y), obs)
+            for obs in obstacles
+        )
+        seg3_clear = not any(
+            self._line_intersects_box((ex, below_y), (ex, ey), obs)
+            for obs in obstacles
+        )
+        if seg1_clear and seg2_clear and seg3_clear:
             return [
-                Waypoint(x=sx, y=mid_y, type="corner"),
-                Waypoint(x=offset_x, y=mid_y, type="corner"),
-                Waypoint(x=ex, y=mid_y, type="corner"),
+                Waypoint(x=sx, y=below_y, type="corner"),
+                Waypoint(x=ex, y=below_y, type="corner"),
             ]
+
+        # Fallback: simple Z-bend at midpoint (may not be perfect but won't crash)
+        mid_y = (sy + ey) / 2
+        return [
+            Waypoint(x=sx, y=mid_y, type="corner"),
+            Waypoint(x=ex, y=mid_y, type="corner"),
+        ]
 
     def _route_bezier(
         self,
@@ -215,25 +256,22 @@ class ArrowRouter:
         end: tuple[float, float],
         obstacles: list[LayoutObject],
     ) -> list[Waypoint]:
-        """Generate a bezier control point perpendicular to the line."""
+        """Generate bezier control points to curve around obstacles."""
         sx, sy = start
         ex, ey = end
 
         mid_x = (sx + ex) / 2
         mid_y = (sy + ey) / 2
 
-        # Perpendicular direction
         dx = ex - sx
         dy = ey - sy
         length = (dx * dx + dy * dy) ** 0.5
         if length < 1e-10:
             return []
 
-        # Perpendicular unit vector
         perp_x = -dy / length
         perp_y = dx / length
 
-        # Offset enough to clear obstacles
         offset = max(
             max(obs.width for obs in obstacles) / 2,
             max(obs.height for obs in obstacles) / 2,
