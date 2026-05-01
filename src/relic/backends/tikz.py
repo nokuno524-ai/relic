@@ -223,7 +223,23 @@ def generate_tikz(ir: FlatIR) -> str:
                 pos_desc = "near end"
             label_part = f" node[{pos_desc}, above, font=\\small] {{{_format_label(arrow.label)}}}"
 
-        if arrow.route == "bezier":
+        # Build source/target with anchors
+        src_ref = arrow.source
+        tgt_ref = arrow.target
+        if arrow.source_anchor:
+            src_ref += _anchor_to_tikz(arrow.source_anchor)
+        if arrow.target_anchor:
+            tgt_ref += _anchor_to_tikz(arrow.target_anchor)
+
+        if arrow.waypoints and any(wp.type == "control" for wp in arrow.waypoints):
+            # Bezier with control points
+            ctrls = ", ".join(f"({wp.x:.2f}, {wp.y:.2f})" for wp in arrow.waypoints if wp.type == "control")
+            lines.append(f"  \\draw[{style}] ({src_ref}) .. controls ({ctrls}) .. ({tgt_ref}){label_part};")
+        elif arrow.waypoints:
+            # Orthogonal with waypoint coordinates
+            wp_parts = " -- ".join(f"({wp.x:.2f}, {wp.y:.2f})" for wp in arrow.waypoints)
+            lines.append(f"  \\draw[{style}] ({src_ref}) -- {wp_parts} -- ({tgt_ref}){label_part};")
+        elif arrow.route == "bezier":
             # Calculate angles based on relative position
             src_obj = ir.objects.get(arrow.source)
             tgt_obj = ir.objects.get(arrow.target)
@@ -340,6 +356,16 @@ def _bezier_angles(src_obj, tgt_obj) -> tuple[int, int]:
             return 90, 270
         else:
             return 270, 90
+
+
+def _anchor_to_tikz(anchor: str) -> str:
+    """Map anchor direction to TikZ anchor suffix."""
+    return {
+        "right": ".east",
+        "left": ".west",
+        "top": ".north",
+        "bottom": ".south",
+    }.get(anchor, "")
 
 
 def _orthogonal_connector(src_obj, tgt_obj) -> str:

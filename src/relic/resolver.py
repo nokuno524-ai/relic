@@ -83,6 +83,11 @@ class Resolver:
         # Fifth pass: resolve overlaps
         self._resolve_overlaps()
 
+        # Fifth-and-a-half pass: route arrows around obstacles
+        from .router import ArrowRouter
+        router = ArrowRouter()
+        router.route_all(self.objects, self.arrows)
+
         # Sixth pass: compute relative positioning metadata
         self._compute_positioning_metadata(dag)
 

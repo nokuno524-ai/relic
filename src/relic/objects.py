@@ -130,6 +130,14 @@ class LayoutObject:
 
 
 @dataclass
+class Waypoint:
+    """A routing waypoint for an arrow."""
+    x: float  # mm
+    y: float  # mm
+    type: str = "corner"  # "corner" for orthogonal, "control" for bezier
+
+
+@dataclass
 class ArrowObject:
     """An arrow between two objects."""
     source: str
@@ -139,3 +147,7 @@ class ArrowObject:
     route: str = ""  # bezier, orthogonal, or ""
     label_pos: float = 0.5
     line: int = 0
+    waypoints: list = field(default_factory=list)  # list of Waypoint
+    source_anchor: str = ""  # "bottom", "top", "left", "right"
+    target_anchor: str = ""
+    auto_routed: bool = False
