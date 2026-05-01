@@ -213,7 +213,43 @@ class Resolver:
 
     def _compute_positioning_metadata(self, dag: DAG):
         """Analyze constraints to determine relative positioning for TikZ."""
+        # First: handle cross-container constraints by propagating to first leaf children
+        cross_positioned = set()  # nodes that got positioning from cross-container propagation
+        for c in self.constraints:
+            direction = _constraint_to_direction(c)
+            if not direction:
+                continue
+            target_obj = self.objects.get(c.target_name)
+            source_obj = self.objects.get(c.source_name)
+            if target_obj is None or source_obj is None:
+                continue
+            # Check if this is a cross-container constraint
+            target_is_container = target_obj.obj_type == ObjType.CONTAINER
+            source_is_container = source_obj.obj_type == ObjType.CONTAINER
+            if target_is_container:
+                # Propagate to first leaf child of target container
+                target_leaf = self._first_leaf(c.target_name)
+                if target_leaf is None:
+                    continue
+                # Find reference node from source
+                if source_is_container:
+                    ref = self._first_leaf(c.source_name)
+                else:
+                    ref = c.source_name
+                if ref is None:
+                    ref = c.source_name
+                dist = abs(_offset_to_mm(c.offset, c.offset_unit))
+                leaf_obj = self.objects.get(target_leaf)
+                if leaf_obj:
+                    leaf_obj.pos_direction = direction
+                    leaf_obj.pos_reference = ref
+                    leaf_obj.pos_distance = dist
+                    cross_positioned.add(target_leaf)
+
+        # Then: handle intra-container/node constraints
         for name in self.objects:
+            if name in cross_positioned:
+                continue
             obj = self.objects[name]
             if obj.obj_type == ObjType.CONTAINER:
                 continue
@@ -221,7 +257,10 @@ class Resolver:
             primary = None
             align = None
             for c in constraints:
-                # Directional constraints
+                # Skip constraints referencing containers (handled above or irrelevant for TikZ)
+                source_obj = self.objects.get(c.source_name)
+                if source_obj and source_obj.obj_type == ObjType.CONTAINER:
+                    continue
                 direction = _constraint_to_direction(c)
                 if direction:
                     dist = abs(_offset_to_mm(c.offset, c.offset_unit))
@@ -234,6 +273,21 @@ class Resolver:
                 obj.pos_direction, obj.pos_reference, obj.pos_distance = primary
             if align:
                 obj.pos_align_direction, obj.pos_align_reference = align
+
+    def _first_leaf(self, container_name: str) -> str | None:
+        """Find the first leaf (non-container) child of a container."""
+        obj = self.objects.get(container_name)
+        if not obj or not obj.children:
+            return None
+        for cname in obj.children:
+            child = self.objects.get(cname)
+            if child and child.obj_type == ObjType.CONTAINER:
+                leaf = self._first_leaf(cname)
+                if leaf:
+                    return leaf
+            elif child:
+                return cname
+        return None
 
 
 def _constraint_to_direction(c: Constraint) -> str | None:

@@ -46,9 +46,10 @@ class TestRelativePositioning:
         )
         assert "below=8mm of X" in tex
 
-    def test_anchor_node_has_absolute_position(self):
+    def test_anchor_node_has_no_at_position(self):
         tex = _compile('figure "T" []:\n  A [box, label: "A"]')
-        assert "at (" in tex
+        assert "at (" not in tex
+        assert "\\node[relicbox] (A) {A};" in tex
 
 
 class TestContainerGrouping:

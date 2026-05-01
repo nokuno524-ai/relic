@@ -78,7 +78,7 @@ def generate_tikz(ir: FlatIR) -> str:
     lines.append("    relicbox/.style={rectangle, draw, fill=white, rounded corners=2pt, minimum width=25mm, minimum height=8mm, align=center},")
     lines.append("    reliccircle/.style={draw, circle, minimum size=10mm, align=center, fill=white},")
     lines.append("    relicarrow/.style={->, thick, >=Stealth},")
-    lines.append("    container/.style={draw=gray, dashed, fill=gray!5, rounded corners=4pt}")
+    lines.append("    container/.style={draw=gray, dashed, fill=gray!5, rounded corners=4pt, inner sep=4mm}")
     lines.append("  ]")
 
     # Define theme colors
@@ -99,18 +99,7 @@ def generate_tikz(ir: FlatIR) -> str:
             anchor_name = name
             break
 
-    # Compute bounding box offset for the anchor node
-    min_x = 0.0
-    min_y = 0.0
-    if ir.objects:
-        non_container_objs = [o for o in ir.objects.values() if o.obj_type != ObjType.CONTAINER]
-        if non_container_objs:
-            min_x = min(o.left for o in non_container_objs)
-            min_y = min(o.bottom for o in non_container_objs)
-    ox = 5.0 - min_x
-    oy = 5.0 - min_y
-
-    # Draw objects with relative positioning (Fix 1)
+    # Draw objects with relative positioning
     for name, obj in non_containers:
         shape = _OBJ_TYPE_TO_TIKZ.get(obj.obj_type, "rectangle")
 
@@ -130,23 +119,14 @@ def generate_tikz(ir: FlatIR) -> str:
 
         label = _format_label(obj.label if obj.label else name)
 
-        # Positioning (Fix 1: relative positioning)
-        pos_parts = []
+        # Positioning: use relative positioning everywhere except anchor
         if obj.pos_direction and obj.pos_reference:
             # Relative positioning
             dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
-            pos_parts.append(f"{obj.pos_direction}={dist} of {obj.pos_reference}")
-            # Also add alignment if present
-            if obj.pos_align_direction and obj.pos_align_reference:
-                pass  # TikZ positioning library handles centering implicitly
+            lines.append(f"  \\node[{style}, {obj.pos_direction}={dist} of {obj.pos_reference}] ({name}) {{{label}}};")
         else:
-            # Absolute positioning (anchor node)
-            x_mm = obj.x + ox
-            y_mm = obj.y + oy
-            pos_parts.append(f"at ({x_mm:.2f}mm, {y_mm:.2f}mm)")
-
-        pos_str = ", ".join(pos_parts)
-        lines.append(f"  \\node[{style}] ({name}) {pos_str} {{{label}}};")
+            # Anchor node at origin
+            lines.append(f"  \\node[{style}] ({name}) {{{label}}};")
 
     lines.append("")
 
