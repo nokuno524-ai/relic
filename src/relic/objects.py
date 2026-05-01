@@ -132,9 +132,22 @@ class LayoutObject:
 @dataclass
 class Waypoint:
     """A routing waypoint for an arrow."""
-    x: float  # mm
-    y: float  # mm
-    type: str = "corner"  # "corner" for orthogonal, "control" for bezier
+    type: str = "corner"  # "corner", "control", "l-bend-h", "l-bend-v"
+
+    # Relative positioning (used by TikZ backend)
+    ref_object: str = ""       # name of reference object
+    ref_anchor: str = ""       # anchor on that object (e.g., "east", "north")
+    x_offset: float = 0.0     # offset from reference in mm
+    y_offset: float = 0.0     # offset from reference in mm
+
+    # For midpoints between two objects (TikZ calc syntax)
+    mid_source: str = ""      # first object for midpoint calc
+    mid_target: str = ""      # second object for midpoint calc
+    mid_fraction: float = 0.5 # 0.5 = midpoint
+
+    # Absolute coords (kept for backward compat / internal router use)
+    x: float = 0.0  # mm
+    y: float = 0.0  # mm
 
 
 @dataclass

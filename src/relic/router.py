@@ -42,10 +42,14 @@ class ArrowRouter:
             # Route around obstacles based on route type
             route = arrow.route or "orthogonal"
             if route == "bezier":
-                arrow.waypoints = self._route_bezier(esc_src, esc_tgt, obstacles)
+                arrow.waypoints = self._route_bezier(
+                    esc_src, esc_tgt, obstacles, arrow.source, arrow.target,
+                    src_anchor, tgt_anchor)
             else:
                 # Default to orthogonal routing
-                arrow.waypoints = self._route_orthogonal(esc_src, esc_tgt, obstacles)
+                arrow.waypoints = self._route_orthogonal(
+                    esc_src, esc_tgt, obstacles, arrow.source, arrow.target,
+                    src_anchor, tgt_anchor, objects)
             arrow.auto_routed = True
 
     def _best_anchors(self, src: LayoutObject, tgt: LayoutObject) -> tuple[str, str]:
@@ -154,21 +158,27 @@ class ArrowRouter:
         start: tuple[float, float],
         end: tuple[float, float],
         obstacles: list[LayoutObject],
+        src_name: str,
+        tgt_name: str,
+        src_anchor: str,
+        tgt_anchor: str,
+        objects: dict[str, LayoutObject],
     ) -> list[Waypoint]:
         """Generate clean L-bend or Z-bend waypoints for orthogonal routing.
         
-        Only returns the INTERMEDIATE bend points, not the start/end.
-        The TikZ backend will draw: source_anchor -> waypoints -> target_anchor.
+        Returns relational waypoints that reference objects by name.
+        The TikZ backend will use -|, |-, and offset syntax.
         """
         sx, sy = start
         ex, ey = end
 
         if abs(sx - ex) < 0.01 and abs(sy - ey) < 0.01:
-            # Same point
             return []
 
+        src = objects[src_name]
+        tgt = objects[tgt_name]
+
         # Try L-bend: go horizontal to target x, then vertical to target y
-        # Corner point: (ex, sy) — source goes horizontal, then turns down/up to target
         corner1 = (ex, sy)
         h_clear = not any(
             self._line_intersects_box((sx, sy), corner1, obs)
@@ -179,7 +189,8 @@ class ArrowRouter:
             for obs in obstacles
         )
         if h_clear and v_clear:
-            return [Waypoint(x=ex, y=sy, type="corner")]
+            # L-bend: horizontal first, then vertical → TikZ -|
+            return [Waypoint(type="l-bend-h")] 
 
         # Try the other L-bend: go vertical first, then horizontal
         corner2 = (sx, ey)
@@ -192,62 +203,38 @@ class ArrowRouter:
             for obs in obstacles
         )
         if v_clear2 and h_clear2:
-            return [Waypoint(x=sx, y=ey, type="corner")]
+            # L-bend: vertical first, then horizontal → TikZ |-
+            return [Waypoint(type="l-bend-v")] 
 
         # Both L-bends blocked — use Z-bend (3 segments)
-        # Find a clear horizontal channel
-        # Try above all obstacles
         max_obs_top = max(obs.top for obs in obstacles) + _ESCAPE_PADDING + 2.0
-        # Try below all obstacles  
         min_obs_bottom = min(obs.bottom for obs in obstacles) - _ESCAPE_PADDING - 2.0
-        
-        mid_x = (sx + ex) / 2
+
+        # Determine if going above or below
+        above_y = max_obs_top
+        below_y = min_obs_bottom
+        go_above = True
 
         # Try Z-bend going above
-        above_y = max_obs_top
-        seg1_clear = not any(
-            self._line_intersects_box((sx, sy), (sx, above_y), obs)
-            for obs in obstacles
-        )
-        seg2_clear = not any(
-            self._line_intersects_box((sx, above_y), (ex, above_y), obs)
-            for obs in obstacles
-        )
-        seg3_clear = not any(
-            self._line_intersects_box((ex, above_y), (ex, ey), obs)
-            for obs in obstacles
-        )
-        if seg1_clear and seg2_clear and seg3_clear:
-            return [
-                Waypoint(x=sx, y=above_y, type="corner"),
-                Waypoint(x=ex, y=above_y, type="corner"),
-            ]
+        seg1_clear = not any(self._line_intersects_box((sx, sy), (sx, above_y), obs) for obs in obstacles)
+        seg2_clear = not any(self._line_intersects_box((sx, above_y), (ex, above_y), obs) for obs in obstacles)
+        seg3_clear = not any(self._line_intersects_box((ex, above_y), (ex, ey), obs) for obs in obstacles)
+        if not (seg1_clear and seg2_clear and seg3_clear):
+            # Try Z-bend going below
+            seg1_clear = not any(self._line_intersects_box((sx, sy), (sx, below_y), obs) for obs in obstacles)
+            seg2_clear = not any(self._line_intersects_box((sx, below_y), (ex, below_y), obs) for obs in obstacles)
+            seg3_clear = not any(self._line_intersects_box((ex, below_y), (ex, ey), obs) for obs in obstacles)
+            go_above = False
 
-        # Try Z-bend going below
-        below_y = min_obs_bottom
-        seg1_clear = not any(
-            self._line_intersects_box((sx, sy), (sx, below_y), obs)
-            for obs in obstacles
-        )
-        seg2_clear = not any(
-            self._line_intersects_box((sx, below_y), (ex, below_y), obs)
-            for obs in obstacles
-        )
-        seg3_clear = not any(
-            self._line_intersects_box((ex, below_y), (ex, ey), obs)
-            for obs in obstacles
-        )
-        if seg1_clear and seg2_clear and seg3_clear:
-            return [
-                Waypoint(x=sx, y=below_y, type="corner"),
-                Waypoint(x=ex, y=below_y, type="corner"),
-            ]
+        # Compute offset from source escape point
+        detour_y = above_y if go_above else below_y
+        # offset relative to source's escape point y
+        y_off = detour_y - sy
 
-        # Fallback: simple Z-bend at midpoint (may not be perfect but won't crash)
-        mid_y = (sy + ey) / 2
+        # Z-bend: escape from source, go horizontal at detour_y, then down to target
         return [
-            Waypoint(x=sx, y=mid_y, type="corner"),
-            Waypoint(x=ex, y=mid_y, type="corner"),
+            Waypoint(type="corner", ref_object=src_name, x_offset=0.0, y_offset=y_off),
+            Waypoint(type="corner", ref_object=tgt_name, x_offset=0.0, y_offset=y_off),
         ]
 
     def _route_bezier(
@@ -255,6 +242,10 @@ class ArrowRouter:
         start: tuple[float, float],
         end: tuple[float, float],
         obstacles: list[LayoutObject],
+        src_name: str = "",
+        tgt_name: str = "",
+        src_anchor: str = "",
+        tgt_anchor: str = "",
     ) -> list[Waypoint]:
         """Generate bezier control points to curve around obstacles."""
         sx, sy = start
@@ -279,5 +270,16 @@ class ArrowRouter:
 
         ctrl_x = mid_x + perp_x * offset
         ctrl_y = mid_y + perp_y * offset
+
+        # Express as offset from midpoint between source and target anchors
+        if src_name and tgt_name:
+            return [Waypoint(
+                type="control",
+                mid_source=src_name,
+                mid_target=tgt_name,
+                x_offset=perp_x * offset,
+                y_offset=perp_y * offset,
+                x=ctrl_x, y=ctrl_y,
+            )]
 
         return [Waypoint(x=ctrl_x, y=ctrl_y, type="control")]

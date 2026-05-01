@@ -228,20 +228,29 @@ def generate_tikz(ir: FlatIR) -> str:
         src_ref = f"({arrow.source}{_anchor_to_tikz(arrow.source_anchor) if arrow.source_anchor else ''})"
         tgt_ref = f"({arrow.target}{_anchor_to_tikz(arrow.target_anchor) if arrow.target_anchor else ''})"
 
-        if arrow.waypoints and any(wp.type == "control" for wp in arrow.waypoints):
-            # Bezier with control points
-            ctrls = " and ".join(f"({wp.x:.2f}, {wp.y:.2f})" for wp in arrow.waypoints if wp.type == "control")
-            lines.append(f"  \\draw[{style}] {src_ref} .. controls {ctrls} .. {tgt_ref}{label_part};")
-        elif arrow.waypoints:
-            # Orthogonal with waypoint coordinates
-            # Deduplicate consecutive identical waypoints
-            pts = [(wp.x, wp.y) for wp in arrow.waypoints]
-            deduped = [arrow.waypoints[0]]
-            for i in range(1, len(pts)):
-                if abs(pts[i][0] - pts[i-1][0]) > 0.01 or abs(pts[i][1] - pts[i-1][1]) > 0.01:
-                    deduped.append(arrow.waypoints[i])
-            wp_parts = " -- ".join(f"({wp.x:.2f}, {wp.y:.2f})" for wp in deduped)
-            lines.append(f"  \\draw[{style}] {src_ref} -- {wp_parts} -- {tgt_ref}{label_part};")
+        if arrow.waypoints:
+            # Determine routing type from waypoints
+            wp_types = {wp.type for wp in arrow.waypoints}
+
+            if "l-bend-h" in wp_types:
+                # L-bend: horizontal then vertical → -|
+                lines.append(f"  \\draw[{style}] {src_ref} -| {tgt_ref}{label_part};")
+            elif "l-bend-v" in wp_types:
+                # L-bend: vertical then horizontal → |-
+                lines.append(f"  \\draw[{style}] {src_ref} |- {tgt_ref}{label_part};")
+            elif "control" in wp_types:
+                # Bezier with relational control points
+                ctrls = []
+                for wp in arrow.waypoints:
+                    if wp.type != "control":
+                        continue
+                    ctrls.append(_waypoint_to_tikz(wp))
+                ctrl_str = " and ".join(ctrls)
+                lines.append(f"  \\draw[{style}] {src_ref} .. controls {ctrl_str} .. {tgt_ref}{label_part};")
+            else:
+                # Z-bend or multi-segment: use relational waypoints
+                wp_parts = " -- ".join(_waypoint_to_tikz(wp) for wp in arrow.waypoints)
+                lines.append(f"  \\draw[{style}] {src_ref} -- {wp_parts} -- {tgt_ref}{label_part};")
         elif arrow.route == "bezier":
             # Calculate angles based on relative position
             src_obj = ir.objects.get(arrow.source)
@@ -339,6 +348,36 @@ def _ml_component_style(obj_type) -> tuple[str | None, str]:
     if obj_type == ObjType.ML_DROPOUT:
         return "rectangle, draw, fill=orange!10, minimum width=20mm, minimum height=8mm, rounded corners=2pt", "Dropout"
     return None, ""
+
+
+def _waypoint_to_tikz(wp) -> str:
+    """Convert a Waypoint to TikZ coordinate syntax."""
+    if wp.type == "control" and wp.mid_source and wp.mid_target:
+        # Midpoint between two objects with offset
+        src_anchor = _anchor_to_tikz(wp.mid_source) if '.' not in wp.mid_source else ''
+        # Use object names directly; calc handles the rest
+        base = f"$({wp.mid_source})!{wp.mid_fraction:.1f}!({wp.mid_target})$"
+        if abs(wp.x_offset) > 0.01 or abs(wp.y_offset) > 0.01:
+            offsets = []
+            if abs(wp.x_offset) > 0.01:
+                offsets.append(f"{wp.x_offset:.1f}mm")
+            if abs(wp.y_offset) > 0.01:
+                offsets.append(f"{wp.y_offset:.1f}mm")
+            return f"$({wp.mid_source})!{wp.mid_fraction:.1f}!({wp.mid_target}) + ({wp.x_offset:.1f}mm, {wp.y_offset:.1f}mm)$"
+        return base
+    elif wp.ref_object:
+        # Offset from an object's anchor
+        shifts = []
+        if abs(wp.x_offset) > 0.01:
+            shifts.append(f"xshift={wp.x_offset:.1f}mm")
+        if abs(wp.y_offset) > 0.01:
+            shifts.append(f"yshift={wp.y_offset:.1f}mm")
+        if shifts:
+            return f"([{', '.join(shifts)}]{wp.ref_object})"
+        return f"({wp.ref_object})"
+    else:
+        # Fallback: absolute coordinates (shouldn't happen in new code)
+        return f"({wp.x:.2f}, {wp.y:.2f})"
 
 
 def _bezier_angles(src_obj, tgt_obj) -> tuple[int, int]:
