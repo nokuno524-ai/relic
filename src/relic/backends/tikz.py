@@ -246,7 +246,7 @@ def generate_tikz(ir: FlatIR) -> str:
                         continue
                     ctrls.append(_waypoint_to_tikz(wp))
                 ctrl_str = " and ".join(ctrls)
-                lines.append(f"  \\draw[{style}] {src_ref} .. controls {ctrl_str} .. {tgt_ref}{label_part};")
+                lines.append(f"  \\draw[{style}] {src_ref} .. controls ({ctrl_str}) .. {tgt_ref}{label_part};")
             else:
                 # Z-bend or multi-segment: use relational waypoints
                 wp_parts = " -- ".join(_waypoint_to_tikz(wp) for wp in arrow.waypoints)
@@ -356,15 +356,9 @@ def _waypoint_to_tikz(wp) -> str:
         # Midpoint between two objects with offset
         src_anchor = _anchor_to_tikz(wp.mid_source) if '.' not in wp.mid_source else ''
         # Use object names directly; calc handles the rest
-        base = f"$({wp.mid_source})!{wp.mid_fraction:.1f}!({wp.mid_target})$"
         if abs(wp.x_offset) > 0.01 or abs(wp.y_offset) > 0.01:
-            offsets = []
-            if abs(wp.x_offset) > 0.01:
-                offsets.append(f"{wp.x_offset:.1f}mm")
-            if abs(wp.y_offset) > 0.01:
-                offsets.append(f"{wp.y_offset:.1f}mm")
             return f"$({wp.mid_source})!{wp.mid_fraction:.1f}!({wp.mid_target}) + ({wp.x_offset:.1f}mm, {wp.y_offset:.1f}mm)$"
-        return base
+        return f"$({wp.mid_source})!{wp.mid_fraction:.1f}!({wp.mid_target})$"
     elif wp.ref_object:
         # Offset from an object's anchor
         shifts = []
