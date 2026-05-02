@@ -948,6 +948,54 @@ class RankResolver:
                     obj.width = bounds_right - bounds_left
                     obj.height = bounds_top - bounds_bottom
 
+        # Apply container-level constraints and shift children
+        self._apply_container_constraints()
+
+    def _apply_container_constraints(self):
+        """Apply external constraints to containers (e.g., Container below Encoder).
+        Shift all children by the same offset."""
+        dag = build_dag(self.constraints, set(self.objects.keys()))
+        for c in self.constraints:
+            tgt = self.objects.get(c.target_name)
+            src = self.objects.get(c.source_name)
+            if not tgt or not src:
+                continue
+            if tgt.obj_type != ObjType.CONTAINER:
+                continue
+            if not tgt.children:
+                continue
+            # Compute the desired position for the container from the constraint
+            if c.target_anchor == "top" and c.source_anchor == "bottom":
+                # target.top = source.bottom + offset
+                desired_top = src.get_anchor("bottom") + _offset_to_mm(c.offset, c.offset_unit)
+                current_top = tgt.get_anchor("top")
+                shift_y = desired_top - current_top
+                if abs(shift_y) > 0.1:
+                    # Shift all children
+                    for child_name in tgt.children:
+                        child = self.objects.get(child_name)
+                        if child:
+                            child.y += shift_y
+                    # Recompute container bounds
+                    child_objs = [self.objects[cn] for cn in tgt.children if cn in self.objects]
+                    if child_objs:
+                        tgt.y = (max(c.top for c in child_objs) + min(c.bottom for c in child_objs)) / 2
+                        tgt.height = max(c.top for c in child_objs) - min(c.bottom for c in child_objs)
+            elif c.target_anchor == "left" and c.source_anchor == "right":
+                # target.left = source.right + offset
+                desired_left = src.get_anchor("right") + _offset_to_mm(c.offset, c.offset_unit)
+                current_left = tgt.get_anchor("left")
+                shift_x = desired_left - current_left
+                if abs(shift_x) > 0.1:
+                    for child_name in tgt.children:
+                        child = self.objects.get(child_name)
+                        if child:
+                            child.x += shift_x
+                    child_objs = [self.objects[cn] for cn in tgt.children if cn in self.objects]
+                    if child_objs:
+                        tgt.x = (min(c.left for c in child_objs) + max(c.right for c in child_objs)) / 2
+                        tgt.width = max(c.right for c in child_objs) - min(c.left for c in child_objs)
+
     # ─── Positioning Metadata for TikZ ───
 
     def _compute_positioning_metadata(self, ranked: RankedLayout, dag: DAG):

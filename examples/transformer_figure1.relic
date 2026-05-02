@@ -4,33 +4,33 @@ figure "Transformer Architecture" [theme: academic]:
     // Encoder column
     container Encoder [flow-v, gap: 8, stack: 3, stack-label: "$\\times N$"]:
         EncSA [box, label: "Multi-Head\nSelf-Attention", fill: "purple!70", shadow: true]
-        EncAdd [add, label: "$\\oplus$"]
+        EncAdd [add, label: "Add & Norm"]
         EncFFN [box, label: "Feed-Forward", fill: "orange!70", shadow: true]
-        EncAdd2 [add, label: "$\\oplus$"]
+        EncAdd2 [add, label: "Add & Norm"]
     
     // Decoder column (positioned right of Encoder)  
     container Decoder [flow-v, gap: 8, stack: 3, stack-label: "$\\times N$"]:
         DecSA [box, label: "Masked Multi-Head\nSelf-Attention", fill: "purple!70", shadow: true]
-        DecAdd [add, label: "$\\oplus$"]
+        DecAdd [add, label: "Add & Norm"]
         DecCA [box, label: "Multi-Head\nCross-Attention", fill: "red!70", shadow: true]
-        DecAdd2 [add, label: "$\\oplus$"]
+        DecAdd2 [add, label: "Add & Norm"]
         DecFFN [box, label: "Feed-Forward", fill: "orange!70", shadow: true]
-        DecAdd3 [add, label: "$\\oplus$"]
+        DecAdd3 [add, label: "Add & Norm"]
     
-    Decoder positioned right-of Encoder [gap: 45]
+    Decoder positioned right-of Encoder [gap: 50]
     
     // Inputs above each column
-    InputEmbed [box, label: "Input\nEmbedding\n+ Pos Enc", fill: "blue!70", shadow: true]
-    InputEmbed positioned above Encoder [gap: 12]
+    InputEmbed [box, label: "Input Embedding\n+ Positional Enc", fill: "blue!70", shadow: true]
+    InputEmbed positioned above Encoder [gap: 10]
     
-    OutputEmbed [box, label: "Output\nEmbedding\n+ Pos Enc", fill: "blue!70", shadow: true]
-    OutputEmbed positioned above Decoder [gap: 12]
+    OutputEmbed [box, label: "Output Embedding\n+ Positional Enc", fill: "blue!70", shadow: true]
+    OutputEmbed positioned above Decoder [gap: 10]
     
     // Output below decoder
     Linear [box, label: "Linear", fill: "green!70", shadow: true]
     Softmax [box, label: "Softmax", fill: "green!70", shadow: true]
-    Linear positioned below Decoder [gap: 12]
-    Softmax positioned below Linear [gap: 8]
+    Linear positioned below Decoder [gap: 10]
+    Softmax positioned below Linear [gap: 6]
     
     // Arrows
     arrow InputEmbed -> EncSA
@@ -39,21 +39,18 @@ figure "Transformer Architecture" [theme: academic]:
     arrow DecAdd3 -> Linear
     arrow Linear -> Softmax
     
-    // === Attention detail (inset, below main figure) ===
-    container AttentionDetail [flow-v, gap: 4, shadow: true]:
-        QKV [box, label: "Q    K    V"]
+    // === Attention detail (inset panel below, left-aligned) ===
+    container AttentionDetail [flow-v, gap: 4]:
+        QKVRow [box, label: "Q    K    V"]
         MatMul1 [box, label: "MatMul"]
         Scale [box, label: "Scale"]
         Soft [box, label: "Softmax"]
         MatMul2 [box, label: "MatMul"]
-        arrow QKV -> MatMul1
+        arrow QKVRow -> MatMul1
         arrow MatMul1 -> Scale
         arrow Scale -> Soft
         arrow Soft -> MatMul2
     
-    AttnLabel [box, label: "Scaled Dot-Product Attention"]
-    AttentionDetail positioned below Encoder [gap: 30]
-    AttnLabel positioned above AttentionDetail [gap: 5]
-    
-    // Callout
-    callout EncSA -> AttentionDetail [style: dashed]
+    AttnLabel [box, label: "Scaled Dot-Product Attention", shadow: true]
+    AttentionDetail positioned below Encoder [gap: 20]
+    AttnLabel positioned above AttentionDetail [gap: 4]

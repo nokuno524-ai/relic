@@ -141,11 +141,12 @@ def generate_tikz(ir: FlatIR) -> str:
 
     non_containers = [(name, nc_dict[name]) for name in sorted_nodes]
 
-    # For nodes involved in cycles, clear their positioning reference
-    # to avoid "No shape named X" errors in TikZ
+    # For nodes involved in cycles, assign absolute positioning from resolver geometry
+    # This avoids placing them at the origin when they were correctly positioned internally
     for name, obj in non_containers:
-        if name in cycle_breaks:
-            obj.pos_direction = ""
+        if name in cycle_breaks and (abs(obj.x) > 0.01 or abs(obj.y) > 0.01):
+            # Use absolute positioning from the resolver's geometry
+            obj.pos_direction = "at"
             obj.pos_reference = ""
             obj.pos_distance = 0
 
@@ -219,7 +220,10 @@ def generate_tikz(ir: FlatIR) -> str:
             opacity_part = f", opacity={obj.opacity}, fill opacity={obj.opacity}"
 
         # Positioning: use relative positioning everywhere except anchor
-        if obj.pos_direction and obj.pos_reference:
+        if obj.pos_direction == "at":
+            # Absolute positioning from resolver geometry (cycle-broken nodes)
+            lines.append(f"  \\node[{style}{opacity_part}] at ({obj.x:.1f}mm, {obj.y:.1f}mm) ({name}) {{{label}}};")
+        elif obj.pos_direction and obj.pos_reference:
             # Always use relative positioning — the geometry solver
             # already computed correct positions
             dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
@@ -275,12 +279,24 @@ def generate_tikz(ir: FlatIR) -> str:
     for cname, obj in ir.objects.items():
         if obj.obj_type != ObjType.CONTAINER or obj.stack_count <= 0:
             continue
+        # Get the fit children for this container
+        cmeta = ir.container_meta
+        if cname not in cmeta:
+            continue
+        layout, label, children = cmeta[cname]
+        if not children:
+            continue
+        fit_nodes = " ".join(f"({c})" for c in children)
+        label_part = ""
+        if label:
+            label_part = f", label={{[anchor=south]above:{_format_label(label)}}}"
+
         lines.append("  % Stack visualization for " + cname)
         lines.append(r"  \begin{scope}[on background layer]")
         for i in range(obj.stack_count - 1, 0, -1):
-            off = i * 2  # 2mm offset per copy
+            off = i * 2
             opacity = 0.2 + 0.2 * (obj.stack_count - 1 - i) / max(obj.stack_count - 1, 1)
-            lines.append(f"    \\node[container, opacity={opacity:.2f}, shift={{({off}mm, {off}mm)}}] at ({cname}) {{}};")
+            lines.append(f"    \\node[container, opacity={opacity:.2f}, fit={fit_nodes}{label_part}, shift={{({off}mm, {off}mm)}}] at ({cname}) {{}};")
         lines.append(r"  \end{scope}")
         if obj.stack_label:
             lines.append(f"  \\node[above right=1mm of {cname}.north east, font=\\small] {{{_format_label(obj.stack_label)}}};")
