@@ -170,23 +170,10 @@ def generate_tikz(ir: FlatIR) -> str:
 
         # Positioning: use relative positioning everywhere except anchor
         if obj.pos_direction and obj.pos_reference:
-            # Check if we have cross-alignment (e.g., below X but aligned with Y)
-            if obj.pos_align_direction and obj.pos_align_reference and obj.pos_align_reference != obj.pos_reference and obj.pos_align_reference != obj.parent:
-                # Use absolute x/y positioning for cross-aligned nodes
-                # Find anchor node coordinates to compute offsets
-                anchor_obj = ir.objects.get(anchor_name)
-                if anchor_obj:
-                    dx = obj.x - anchor_obj.x
-                    dy = obj.y - anchor_obj.y
-                    # In y-down: higher y = lower on page. TikZ y-up, so negate.
-                    lines.append(f"  \\node[{style}{opacity_part}] at ({dx:.1f}mm, {-dy:.1f}mm) ({name}) {{{label}}};")
-                else:
-                    dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
-                    lines.append(f"  \\node[{style}, {obj.pos_direction}={dist} of {obj.pos_reference}{opacity_part}] ({name}) {{{label}}};")
-            else:
-                # Relative positioning
-                dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
-                lines.append(f"  \\node[{style}, {obj.pos_direction}={dist} of {obj.pos_reference}{opacity_part}] ({name}) {{{label}}};")
+            # Always use relative positioning — the geometry solver
+            # already computed correct positions
+            dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
+            lines.append(f"  \\node[{style}, {obj.pos_direction}={dist} of {obj.pos_reference}{opacity_part}] ({name}) {{{label}}};")
         else:
             # Anchor node at origin
             lines.append(f"  \\node[{style}{opacity_part}] ({name}) {{{label}}};")
@@ -423,8 +410,9 @@ def _bezier_angles(src_obj, tgt_obj) -> tuple[int, int]:
         else:
             return 180, 0
     else:
-        # Primarily vertical (y-down: dy > 0 = target below = downward arrow)
-        if dy >= 0:
+        # Primarily vertical — resolver uses y-up convention (more negative = lower)
+        # dy < 0 means target is below source → downward arrow → out=270, in=90
+        if dy <= 0:
             return 270, 90
         else:
             return 90, 270

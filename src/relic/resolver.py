@@ -1,4 +1,4 @@
-"""Constraint resolver — forward propagation through DAG."""
+"""Constraint resolver — dispatches to RankResolver with fallback."""
 
 from __future__ import annotations
 
@@ -12,7 +12,24 @@ from .dag import DAG, build_dag
 from .errors import ResolveError
 from .ir import FlatIR
 from .objects import ArrowObject, LayoutObject, ObjType
+from .rank_resolver import RankResolver
 
+
+def resolve(figure: FigureDecl) -> FlatIR:
+    """Resolve a figure AST into a FlatIR.
+
+    Uses the rank-based resolver by default. Falls back to the legacy
+    constraint-based resolver for complex cases.
+    """
+    try:
+        resolver = RankResolver()
+        return resolver.resolve(figure)
+    except Exception as e:
+        print(f"[resolver] Rank resolver failed ({e}), falling back to legacy resolver", file=sys.stderr)
+        return _legacy_resolve(figure)
+
+
+# ─── Legacy Constraint Resolver (fallback) ───
 
 _ML_TYPE_MAP = {
     "add": ObjType.ML_ADD,
@@ -21,7 +38,6 @@ _ML_TYPE_MAP = {
     "softmax": ObjType.ML_SOFTMAX,
     "dropout": ObjType.ML_DROPOUT,
 }
-
 
 _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "pt": 0.3528, "%": 1.0}
 
@@ -41,8 +57,8 @@ def _offset_to_mm(offset: float, unit: str) -> float:
     return offset * _UNIT_TO_MM.get(unit, 1.0)
 
 
-class Resolver:
-    """Resolves constraints to compute absolute positions."""
+class _LegacyResolver:
+    """Legacy constraint-based resolver (kept as fallback)."""
 
     def __init__(self):
         self.objects: dict[str, LayoutObject] = {}
@@ -51,10 +67,9 @@ class Resolver:
         self.theme: str = "academic"
         self.figure_name: str = ""
         self.figure_width: float = 140.0
-        self._container_anchors: set[str] = set()  # names of containers used as anchor sources
+        self._container_anchors: set[str] = set()
 
     def resolve(self, figure: FigureDecl) -> FlatIR:
-        """Resolve a figure AST into a FlatIR."""
         self.figure_name = figure.name
         for p in figure.properties:
             if p.key == "theme":
@@ -63,16 +78,10 @@ class Resolver:
                 val = str(p.value)
                 self.figure_width = _parse_dimension(val)
 
-        # First pass: register all objects
         self._register_children(figure.children)
-
-        # Second pass: collect constraints
         self._collect_constraints(figure.children)
-
-        # Third pass: auto-layout for flow containers
         self._apply_flow_layouts(figure.children)
 
-        # Fourth pass: resolve DAG
         dag = build_dag(self.constraints, set(self.objects.keys()))
         order = dag.topological_sort()
 
@@ -81,10 +90,8 @@ class Resolver:
             for c in constraints:
                 self._apply_constraint(c)
 
-        # Fourth-and-a-half pass: compute container bounding boxes
         self._compute_container_bounds()
 
-        # Re-resolve constraints that depend on container anchors
         for name in order:
             constraints = dag.get_constraints_for(name)
             for c in constraints:
@@ -94,15 +101,12 @@ class Resolver:
                 elif c.source_name in self._container_anchors:
                     self._apply_constraint(c)
 
-        # Fifth pass: resolve overlaps
         self._resolve_overlaps()
 
-        # Fifth-and-a-half pass: route arrows around obstacles
         from .router import ArrowRouter
         router = ArrowRouter()
         router.route_all(self.objects, self.arrows)
 
-        # Sixth pass: compute relative positioning metadata
         self._compute_positioning_metadata(dag)
 
         return FlatIR(
@@ -131,8 +135,7 @@ class Resolver:
         props = _resolve_props(decl)
         obj_type = _ML_TYPE_MAP.get(decl.obj_type) or ObjType[decl.obj_type.upper()]
         obj = LayoutObject(
-            name=decl.name,
-            obj_type=obj_type,
+            name=decl.name, obj_type=obj_type,
             label=str(props.get("label", decl.name)),
             fill=str(props.get("fill", "")),
             parent=parent,
@@ -147,11 +150,9 @@ class Resolver:
             obj.height = float(props["height"])
         if obj_type == ObjType.IMAGE:
             obj.src = str(props.get("src", ""))
-            # For images, 'width' is the image display width (e.g., '30mm')
             w = props.get("width", "")
             if isinstance(w, str) and any(w.endswith(u) for u in ('mm', 'cm', 'pt')):
                 obj.image_width = w
-        # Opacity
         if "ghost" in props and props["ghost"]:
             obj.opacity = 0.2
         elif "opacity" in props:
@@ -165,22 +166,16 @@ class Resolver:
         if "gap" in props:
             val = str(props["gap"])
             gap = _parse_dimension(val)
-
         obj = LayoutObject(
-            name=decl.name,
-            obj_type=ObjType.CONTAINER,
-            layout=decl.layout,
-            gap=gap,
-            parent=parent,
+            name=decl.name, obj_type=ObjType.CONTAINER,
+            layout=decl.layout, gap=gap, parent=parent,
             label=str(props.get("label", "")),
         )
-        # Opacity for containers
         if "ghost" in props and props["ghost"]:
             obj.opacity = 0.2
         elif "opacity" in props:
             obj.opacity = float(props["opacity"])
         self.objects[decl.name] = obj
-
         for child in decl.children:
             if isinstance(child, ObjectDecl):
                 self._register_object(child, parent=decl.name)
@@ -201,7 +196,6 @@ class Resolver:
                     offset_unit=child.offset_unit,
                 )
                 self.constraints.append(c)
-                # Track if source is a container
                 if child.source.object_name in self.objects:
                     src_obj = self.objects[child.source.object_name]
                     if src_obj.obj_type == ObjType.CONTAINER:
@@ -212,7 +206,6 @@ class Resolver:
                 self._collect_constraints(child.children)
 
     def _apply_flow_layouts(self, children: list):
-        """Auto-inject position constraints for flow containers."""
         for child in children:
             if isinstance(child, ContainerDecl):
                 obj = self.objects.get(child.name)
@@ -221,26 +214,20 @@ class Resolver:
                 self._apply_flow_layouts(child.children)
 
     def _layout_flow_container(self, container: LayoutObject, decl: ContainerDecl):
-        """Create sequential constraints for children in a flow container."""
         child_names = container.children
         if len(child_names) < 2:
-            # Single child: just center it in container
             if child_names:
                 cname = child_names[0]
                 self.constraints.append(Constraint(cname, "center-x", container.name, "center-x"))
                 self.constraints.append(Constraint(cname, "center-y", container.name, "center-y"))
             return
-
         gap = container.gap
         is_vertical = container.layout in ("flow-v", "")
         is_horizontal = container.layout == "flow-h"
-
         for i, cname in enumerate(child_names):
-            # First child aligns to container
             if i == 0:
                 if is_vertical:
                     self.constraints.append(Constraint(cname, "center-x", container.name, "center-x"))
-                    # Align first child's top to container top
                     self.constraints.append(Constraint(cname, "top", container.name, "top"))
                 elif is_horizontal:
                     self.constraints.append(Constraint(cname, "center-y", container.name, "center-y"))
@@ -249,16 +236,10 @@ class Resolver:
                 prev = child_names[i - 1]
                 if is_vertical:
                     self.constraints.append(Constraint(cname, "center-x", container.name, "center-x"))
-                    self.constraints.append(Constraint(
-                        cname, "top", prev, "bottom",
-                        offset=-gap, offset_unit="mm",
-                    ))
+                    self.constraints.append(Constraint(cname, "top", prev, "bottom", offset=-gap, offset_unit="mm"))
                 elif is_horizontal:
                     self.constraints.append(Constraint(cname, "center-y", container.name, "center-y"))
-                    self.constraints.append(Constraint(
-                        cname, "left", prev, "right",
-                        offset=gap, offset_unit="mm",
-                    ))
+                    self.constraints.append(Constraint(cname, "left", prev, "right", offset=gap, offset_unit="mm"))
 
     def _apply_constraint(self, c: Constraint):
         target = self.objects.get(c.target_name)
@@ -270,7 +251,6 @@ class Resolver:
         target.set_anchor(c.target_anchor, value)
 
     def _compute_container_bounds(self):
-        """Compute container positions from their children's bounding boxes."""
         for name, obj in self.objects.items():
             if obj.obj_type == ObjType.CONTAINER and obj.children:
                 child_objs = [self.objects[c] for c in obj.children if c in self.objects]
@@ -285,38 +265,26 @@ class Resolver:
                     obj.height = bounds_top - bounds_bottom
 
     def _resolve_overlaps(self, max_iterations: int = 50):
-        """Post-resolution pass: detect and fix overlapping objects."""
         for iteration in range(max_iterations):
             moved = False
-            # Get all non-container, non-ghost objects
             leaf_objects = [
                 (name, obj) for name, obj in self.objects.items()
                 if obj.obj_type != ObjType.CONTAINER
-                and not (0 < obj.opacity < 0.5)  # skip ghosted
+                and not (0 < obj.opacity < 0.5)
             ]
-
             for i, (name_a, a) in enumerate(leaf_objects):
                 for j, (name_b, b) in enumerate(leaf_objects):
                     if i >= j:
                         continue
-                    # Skip siblings in the same flow container
                     if a.parent and a.parent == b.parent:
                         parent_obj = self.objects.get(a.parent)
                         if parent_obj and parent_obj.layout in ("flow-v", "flow-h", ""):
                             continue
-
-                    # Compute overlap
                     overlap_x = min(a.right, b.right) - max(a.left, b.left)
                     overlap_y = min(a.top, b.top) - max(a.bottom, b.bottom)
-
                     if overlap_x > 0 and overlap_y > 0:
                         moved = True
-                        print(
-                            f"[resolver] Overlap detected: '{name_a}' and '{name_b}' "
-                            f"(overlap {overlap_x:.1f}x{overlap_y:.1f}mm)",
-                            file=sys.stderr,
-                        )
-                        # Push apart along the axis with less overlap
+                        print(f"[resolver] Overlap: '{name_a}' and '{name_b}'", file=sys.stderr)
                         if overlap_x < overlap_y:
                             push = overlap_x / 2 + 2.0
                             if a.x <= b.x:
@@ -333,14 +301,11 @@ class Resolver:
                             else:
                                 a.y += push
                                 b.y -= push
-
             if not moved:
                 break
 
     def _compute_positioning_metadata(self, dag: DAG):
-        """Analyze constraints to determine relative positioning for TikZ."""
-        # First: handle cross-container constraints by propagating to first leaf children
-        cross_positioned = set()  # nodes that got positioning from cross-container propagation
+        cross_positioned = set()
         for c in self.constraints:
             direction = _constraint_to_direction(c)
             if not direction:
@@ -349,15 +314,12 @@ class Resolver:
             source_obj = self.objects.get(c.source_name)
             if target_obj is None or source_obj is None:
                 continue
-            # Check if this is a cross-container constraint
             target_is_container = target_obj.obj_type == ObjType.CONTAINER
             source_is_container = source_obj.obj_type == ObjType.CONTAINER
             if target_is_container:
-                # Propagate to first leaf child of target container
                 target_leaf = self._first_leaf(c.target_name)
                 if target_leaf is None:
                     continue
-                # Find reference node from source
                 if source_is_container:
                     ref = self._first_leaf(c.source_name)
                 else:
@@ -371,8 +333,6 @@ class Resolver:
                     leaf_obj.pos_reference = ref
                     leaf_obj.pos_distance = dist
                     cross_positioned.add(target_leaf)
-
-        # Then: handle intra-container/node constraints
         for name in self.objects:
             if name in cross_positioned:
                 continue
@@ -386,7 +346,6 @@ class Resolver:
                 source_obj = self.objects.get(c.source_name)
                 direction = _constraint_to_direction(c)
                 if direction:
-                    # If source is a container, resolve to its last leaf child
                     if source_obj and source_obj.obj_type == ObjType.CONTAINER:
                         ref = self._last_leaf(c.source_name)
                         if ref is None:
@@ -397,7 +356,7 @@ class Resolver:
                     primary = (direction, ref, dist)
                 elif c.target_anchor in ("center-x",) and c.source_anchor in ("center-x",):
                     if source_obj and source_obj.obj_type == ObjType.CONTAINER:
-                        align_ref = c.source_name  # keep container for alignment
+                        align_ref = c.source_name
                     else:
                         align_ref = c.source_name
                     align = ("center-x", align_ref)
@@ -413,7 +372,6 @@ class Resolver:
                 obj.pos_align_direction, obj.pos_align_reference = align
 
     def _first_leaf(self, container_name: str) -> str | None:
-        """Find the first leaf (non-container) child of a container."""
         obj = self.objects.get(container_name)
         if not obj or not obj.children:
             return None
@@ -428,11 +386,6 @@ class Resolver:
         return None
 
     def _last_leaf(self, container_name: str) -> str | None:
-        """Find the last leaf (non-container) child of a container.
-        
-        For flow-v containers, this is the bottom-most child.
-        For flow-h containers, this is the right-most child.
-        """
         obj = self.objects.get(container_name)
         if not obj or not obj.children:
             return None
@@ -448,8 +401,6 @@ class Resolver:
 
 
 def _constraint_to_direction(c: Constraint) -> str | None:
-    """Map a constraint to a TikZ positioning direction."""
-    # target.top = source.bottom ± offset → "below"
     if c.target_anchor == "top" and c.source_anchor == "bottom":
         return "below"
     if c.target_anchor == "bottom" and c.source_anchor == "top":
@@ -462,7 +413,6 @@ def _constraint_to_direction(c: Constraint) -> str | None:
 
 
 def _parse_dimension(val: str) -> float:
-    """Parse a dimension string like '14cm' or '6mm' to mm."""
     val = str(val).strip()
     if val.endswith("mm"):
         return float(val[:-2])
@@ -476,5 +426,5 @@ def _parse_dimension(val: str) -> float:
         return 0.0
 
 
-def resolve(figure: FigureDecl) -> FlatIR:
-    return Resolver().resolve(figure)
+def _legacy_resolve(figure: FigureDecl) -> FlatIR:
+    return _LegacyResolver().resolve(figure)
