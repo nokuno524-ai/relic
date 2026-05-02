@@ -130,10 +130,13 @@ def generate_tikz(ir: FlatIR) -> str:
 
         # Handle fill override
         if obj.fill:
-            fill_color = theme.resolve_color(obj.fill)
-            draw_color = theme.resolve_color(obj.fill)
-            # For accent colors: light fill, darker draw
-            style += f", fill={fill_color}!15, draw={draw_color}"
+            resolved = theme.resolve_color(obj.fill)
+            # If resolved already has ! (like blue!70), use it for draw and make a lighter version for fill
+            if '!' in resolved:
+                base, intensity = resolved.split('!', 1)
+                style += f", fill={base}!15, draw={base}!{intensity}"
+            else:
+                style += f", fill={resolved}!15, draw={resolved}!70"
 
         # Handle image type
         if obj.obj_type == ObjType.IMAGE:
