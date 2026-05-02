@@ -14,7 +14,12 @@ class ArrowRouter:
 
     def route_all(self, objects: dict[str, LayoutObject], arrows: list[ArrowObject]):
         """Route all arrows, setting waypoints and anchors."""
-        for arrow in arrows:
+        # Group arrows by target for bus routing
+        target_counts: dict[str, list[int]] = {}
+        for i, arrow in enumerate(arrows):
+            target_counts.setdefault(arrow.target, []).append(i)
+
+        for i, arrow in enumerate(arrows):
             src = objects.get(arrow.source)
             tgt = objects.get(arrow.target)
             if src is None or tgt is None:
@@ -24,6 +29,14 @@ class ArrowRouter:
             src_anchor, tgt_anchor = self._best_anchors(src, tgt)
             arrow.source_anchor = src_anchor
             arrow.target_anchor = tgt_anchor
+
+            # Bus routing: spread anchors when multiple arrows hit same target
+            siblings = target_counts.get(arrow.target, [])
+            if len(siblings) > 1:
+                idx = siblings.index(i)
+                n = len(siblings)
+                tgt_anchor = self._spread_anchor(tgt_anchor, idx, n, tgt)
+                arrow.target_anchor = tgt_anchor
 
             # Compute escape points
             esc_src = self._escape_point(src, src_anchor)
@@ -67,6 +80,28 @@ class ArrowRouter:
                 return "top", "bottom"
             else:
                 return "bottom", "top"
+
+    def _spread_anchor(self, anchor: str, idx: int, total: int, obj: LayoutObject) -> str:
+        """Distribute target anchors across a face when multiple arrows converge.
+        
+        Returns an angle-based anchor like '160' for TikZ compass anchors.
+        """
+        if total <= 1:
+            return anchor
+        # Map base anchor to angle range on that face
+        angle_ranges = {
+            "top": (100, 170),     # top face: 100° to 170° (visual top)
+            "bottom": (10, 80),    # bottom face: 10° to 80° (visual bottom)
+            "left": (170, 190),    # left face
+            "right": (-10, 10),    # right face
+        }
+        base_range = angle_ranges.get(anchor, (45, 135))
+        # Distribute evenly
+        if total == 1:
+            angle = (base_range[0] + base_range[1]) // 2
+        else:
+            angle = base_range[0] + (base_range[1] - base_range[0]) * idx / (total - 1)
+        return str(int(angle))
 
     def _escape_point(self, obj: LayoutObject, anchor: str) -> tuple[float, float]:
         """Compute a point just outside the object face with padding."""

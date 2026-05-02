@@ -51,6 +51,7 @@ class Resolver:
         self.theme: str = "academic"
         self.figure_name: str = ""
         self.figure_width: float = 140.0
+        self._container_anchors: set[str] = set()  # names of containers used as anchor sources
 
     def resolve(self, figure: FigureDecl) -> FlatIR:
         """Resolve a figure AST into a FlatIR."""
@@ -79,6 +80,19 @@ class Resolver:
             constraints = dag.get_constraints_for(name)
             for c in constraints:
                 self._apply_constraint(c)
+
+        # Fourth-and-a-half pass: compute container bounding boxes
+        self._compute_container_bounds()
+
+        # Re-resolve constraints that depend on container anchors
+        for name in order:
+            constraints = dag.get_constraints_for(name)
+            for c in constraints:
+                source_obj = self.objects.get(c.source_name)
+                if source_obj and source_obj.obj_type == ObjType.CONTAINER:
+                    self._apply_constraint(c)
+                elif c.source_name in self._container_anchors:
+                    self._apply_constraint(c)
 
         # Fifth pass: resolve overlaps
         self._resolve_overlaps()
@@ -178,14 +192,20 @@ class Resolver:
     def _collect_constraints(self, children: list):
         for child in children:
             if isinstance(child, ConstraintExpr):
-                self.constraints.append(Constraint(
+                c = Constraint(
                     target_name=child.target.object_name,
                     target_anchor=child.target.anchor,
                     source_name=child.source.object_name,
                     source_anchor=child.source.anchor,
                     offset=child.offset,
                     offset_unit=child.offset_unit,
-                ))
+                )
+                self.constraints.append(c)
+                # Track if source is a container
+                if child.source.object_name in self.objects:
+                    src_obj = self.objects[child.source.object_name]
+                    if src_obj.obj_type == ObjType.CONTAINER:
+                        self._container_anchors.add(child.source.object_name)
             elif isinstance(child, ContainerDecl):
                 self._collect_constraints(child.children)
             elif isinstance(child, ObjectDecl):
@@ -248,6 +268,21 @@ class Resolver:
         offset_mm = _offset_to_mm(c.offset, c.offset_unit)
         value = source.get_anchor(c.source_anchor) + offset_mm
         target.set_anchor(c.target_anchor, value)
+
+    def _compute_container_bounds(self):
+        """Compute container positions from their children's bounding boxes."""
+        for name, obj in self.objects.items():
+            if obj.obj_type == ObjType.CONTAINER and obj.children:
+                child_objs = [self.objects[c] for c in obj.children if c in self.objects]
+                if child_objs:
+                    bounds_left = min(c.left for c in child_objs)
+                    bounds_right = max(c.right for c in child_objs)
+                    bounds_top = max(c.top for c in child_objs)
+                    bounds_bottom = min(c.bottom for c in child_objs)
+                    obj.x = (bounds_left + bounds_right) / 2
+                    obj.y = (bounds_top + bounds_bottom) / 2
+                    obj.width = bounds_right - bounds_left
+                    obj.height = bounds_top - bounds_bottom
 
     def _resolve_overlaps(self, max_iterations: int = 50):
         """Post-resolution pass: detect and fix overlapping objects."""

@@ -25,11 +25,11 @@ class Theme:
 ACADEMIC_THEME = Theme(
     name="academic",
     colors={
-        "accent-blue": "blue!60!black",
-        "accent-red": "red!70!black",
-        "accent-green": "green!50!black",
-        "accent-orange": "orange!80!black",
-        "accent-purple": "purple!60!black",
+        "accent-blue": "blue!70",
+        "accent-red": "red!70",
+        "accent-green": "green!70",
+        "accent-orange": "orange!70",
+        "accent-purple": "purple!70",
         "bg-light": "gray!10",
         "bg-white": "white",
         "text-primary": "black",

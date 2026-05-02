@@ -91,9 +91,9 @@ def generate_tikz(ir: FlatIR) -> str:
     # Style definitions (Fix 2 + Fix 6)
     lines.append("    font=\\small,")
     lines.append("    >=Stealth,")
-    lines.append("    relicbox/.style={rectangle, draw, fill=white, rounded corners=2pt, minimum width=25mm, minimum height=8mm, align=center},")
+    lines.append("    relicbox/.style={rectangle, draw, rounded corners=2pt, minimum width=25mm, minimum height=8mm, align=center},")
     lines.append("    reliccircle/.style={draw, circle, minimum size=10mm, align=center, fill=white},")
-    lines.append("    relicarrow/.style={->, thick, >=Stealth},")
+    lines.append("    relicarrow/.style={->, thick, >=Stealth, shorten >=1mm},")
     lines.append("    container/.style={draw=gray, dashed, fill=gray!5, rounded corners=4pt, inner sep=4mm}")
     lines.append("  ]")
 
@@ -130,8 +130,10 @@ def generate_tikz(ir: FlatIR) -> str:
 
         # Handle fill override
         if obj.fill:
-            fill = theme.resolve_color(obj.fill)
-            style += f", fill={fill}"
+            fill_color = theme.resolve_color(obj.fill)
+            draw_color = theme.resolve_color(obj.fill)
+            # For accent colors: light fill, darker draw
+            style += f", fill={fill_color}!15, draw={draw_color}"
 
         # Handle image type
         if obj.obj_type == ObjType.IMAGE:
@@ -165,9 +167,23 @@ def generate_tikz(ir: FlatIR) -> str:
 
         # Positioning: use relative positioning everywhere except anchor
         if obj.pos_direction and obj.pos_reference:
-            # Relative positioning
-            dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
-            lines.append(f"  \\node[{style}, {obj.pos_direction}={dist} of {obj.pos_reference}{opacity_part}] ({name}) {{{label}}};")
+            # Check if we have cross-alignment (e.g., below X but aligned with Y)
+            if obj.pos_align_direction and obj.pos_align_reference and obj.pos_align_reference != obj.pos_reference and obj.pos_align_reference != obj.parent:
+                # Use absolute x/y positioning for cross-aligned nodes
+                # Find anchor node coordinates to compute offsets
+                anchor_obj = ir.objects.get(anchor_name)
+                if anchor_obj:
+                    dx = obj.x - anchor_obj.x
+                    dy = obj.y - anchor_obj.y
+                    # In y-down: higher y = lower on page. TikZ y-up, so negate.
+                    lines.append(f"  \\node[{style}{opacity_part}] at ({dx:.1f}mm, {-dy:.1f}mm) ({name}) {{{label}}};")
+                else:
+                    dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
+                    lines.append(f"  \\node[{style}, {obj.pos_direction}={dist} of {obj.pos_reference}{opacity_part}] ({name}) {{{label}}};")
+            else:
+                # Relative positioning
+                dist = f"{obj.pos_distance:.0f}mm" if obj.pos_distance > 0 else ""
+                lines.append(f"  \\node[{style}, {obj.pos_direction}={dist} of {obj.pos_reference}{opacity_part}] ({name}) {{{label}}};")
         else:
             # Anchor node at origin
             lines.append(f"  \\node[{style}{opacity_part}] ({name}) {{{label}}};")
@@ -186,6 +202,9 @@ def generate_tikz(ir: FlatIR) -> str:
             label_part = ""
             if label:
                 label_part = f", label={{[anchor=south]above:{_format_label(label)}}}"
+            elif cname and not cname.startswith('_'):
+                # Use container name as label if no explicit label
+                label_part = f", label={{[anchor=south]above:{_format_label(cname)}}}"
             lines.append(f"    \\node[container, fit={fit_nodes}{label_part}] ({cname}) {{}};")
         lines.append(r"  \end{scope}")
         lines.append("")
@@ -251,16 +270,13 @@ def generate_tikz(ir: FlatIR) -> str:
                 # Z-bend or multi-segment
                 z_escapes = [wp for wp in arrow.waypoints if wp.type == "z-bend-escape"]
                 if z_escapes:
-                    # Z-bend: source → escape point → -| → target
+                    # Z-bend: source → ++offset → -| → target
                     wp = z_escapes[0]
-                    shifts = []
                     if abs(wp.y_offset) > 0.01:
-                        shifts.append(f"yshift={wp.y_offset:.1f}mm")
-                    if shifts:
-                        escape = f"([{', '.join(shifts)}]{arrow.source}{_anchor_to_tikz(arrow.source_anchor)})"
+                        sign = '-' if wp.y_offset > 0 else '+'
+                        lines.append(f"  \\draw[{style}] {src_ref} -- ++(0, {sign}{abs(wp.y_offset):.1f}mm) -| {tgt_ref}{label_part};")
                     else:
-                        escape = f"({arrow.source}{_anchor_to_tikz(arrow.source_anchor)})"
-                    lines.append(f"  \\draw[{style}] {src_ref} -- {escape} -| {tgt_ref}{label_part};")
+                        lines.append(f"  \\draw[{style}] {src_ref} -| {tgt_ref}{label_part};")
                 else:
                     wp_parts = " -- ".join(_waypoint_to_tikz(wp) for wp in arrow.waypoints)
                     lines.append(f"  \\draw[{style}] {src_ref} -- {wp_parts} -- {tgt_ref}{label_part};")
@@ -334,11 +350,11 @@ def _color_to_hex(color: str) -> str:
     if color.startswith('#'):
         return color[1:]
     color_map = {
-        "blue!60!black": "0000CC",
-        "red!70!black": "CC0000",
-        "green!50!black": "009900",
-        "orange!80!black": "E68A00",
-        "purple!60!black": "7A0099",
+        "blue!70": "3366CC",
+        "red!70": "CC3333",
+        "green!70": "339933",
+        "orange!70": "E68A00",
+        "purple!70": "9933CC",
         "gray!10": "E6E6E6",
         "white": "FFFFFF",
         "black": "000000",
@@ -417,7 +433,11 @@ def _anchor_to_tikz(anchor: str) -> str:
     The resolver uses y-down coordinates internally:
     - 'top' (y + h/2) is the visual bottom → TikZ .south
     - 'bottom' (y - h/2) is the visual top → TikZ .north
+    
+    Numeric anchors (from bus routing) are passed through as-is.
     """
+    if anchor and anchor.lstrip('-').isdigit():
+        return f".{anchor}"
     return {
         "right": ".east",
         "left": ".west",
