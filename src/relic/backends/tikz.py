@@ -114,24 +114,45 @@ def generate_tikz(ir: FlatIR) -> str:
                       if obj.obj_type != ObjType.CONTAINER]
 
     # Topologically sort nodes so that referenced nodes come before referencing nodes
-    # Build dependency graph from pos_reference
+    # Build dependency graph from pos_reference with cycle detection
     nc_dict = {name: obj for name, obj in non_containers}
     visited = set()
     sorted_nodes = []
-    
+    in_stack = set()
+    cycle_breaks = set()
+
     def visit(name):
         if name in visited:
             return
-        visited.add(name)
+        if name in in_stack:
+            # Cycle detected — mark for reference removal
+            cycle_breaks.add(name)
+            return
+        in_stack.add(name)
         obj = nc_dict.get(name)
         if obj and obj.pos_reference and obj.pos_reference in nc_dict:
             visit(obj.pos_reference)
-        sorted_nodes.append(name)
-    
+        if name not in visited:
+            visited.add(name)
+            sorted_nodes.append(name)
+
     for name, obj in non_containers:
         visit(name)
-    
+
     non_containers = [(name, nc_dict[name]) for name in sorted_nodes]
+
+    # For nodes involved in cycles, clear their positioning reference
+    # to avoid "No shape named X" errors in TikZ
+    for name, obj in non_containers:
+        if name in cycle_breaks:
+            obj.pos_direction = ""
+            obj.pos_reference = ""
+            obj.pos_distance = 0
+
+    # Re-sort: anchor nodes first, then referenced nodes in dependency order
+    anchor_nodes = [(n, o) for n, o in non_containers if not o.pos_reference]
+    ref_nodes = [(n, o) for n, o in non_containers if o.pos_reference]
+    non_containers = anchor_nodes + ref_nodes
 
     # Find the anchor node (first non-container with no positioning metadata)
     anchor_name = None

@@ -397,6 +397,45 @@ class RankResolver:
                         node_rank[cname] = rank_idx
                         node_rank[child_name] = rank_idx + i
 
+        # 2b. Parallel containers: right-of/left-of → same starting rank
+        # Build a map of horizontal constraints between containers
+        parallel_pairs: list[tuple[str, str]] = []  # (left, right) container names
+        for c in self.constraints:
+            if c.target_anchor == "left" and c.source_anchor == "right":
+                # target is right-of source
+                if c.target_name in self._flow_v_containers and c.source_name in self._flow_v_containers:
+                    parallel_pairs.append((c.source_name, c.target_name))
+            elif c.target_anchor == "right" and c.source_anchor == "left":
+                if c.target_name in self._flow_v_containers and c.source_name in self._flow_v_containers:
+                    parallel_pairs.append((c.target_name, c.source_name))
+
+        for left_c, right_c in parallel_pairs:
+            left_children = self._flow_v_containers.get(left_c, [])
+            right_children = self._flow_v_containers.get(right_c, [])
+            if not left_children or not right_children:
+                continue
+            # Find the starting rank of the left container's first child
+            if left_children[0] in node_rank:
+                base_rank = node_rank[left_children[0]]
+                # Check if container node itself has a rank
+            elif left_c in node_rank:
+                base_rank = node_rank[left_c]
+            else:
+                continue
+            # Reassign right container's children to parallel ranks
+            for i, child_name in enumerate(right_children):
+                desired_rank = base_rank + i
+                old_rank = node_rank.get(child_name, None)
+                if old_rank is not None and old_rank != desired_rank:
+                    # Shift this node and all nodes in its container that come after
+                    shift = desired_rank - old_rank
+                    for j, sibling in enumerate(right_children[i:]):
+                        if sibling in node_rank:
+                            node_rank[sibling] = node_rank[sibling] + shift
+            # Also align the container node
+            if right_c in node_rank and left_c in node_rank:
+                node_rank[right_c] = node_rank[left_c]
+
         # 3. Standalone nodes: determine rank from constraints
         # Build a dependency graph for rank assignment
         # X.top = Y.bottom + gap → X is one rank below Y
