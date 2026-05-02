@@ -471,12 +471,19 @@ class RankResolver:
         # First pass: assign ranks based on "below" constraints
         for target, source, ctype in rank_constraints:
             if ctype == "below":
-                if source in node_rank:
+                # For containers, use the last child's rank + 1 as effective "bottom"
+                source_rank = node_rank.get(source)
+                if source_rank is not None and source in self._flow_v_containers:
+                    children = self._flow_v_containers[source]
+                    if children:
+                        last_child_rank = max(node_rank.get(c, source_rank) for c in children)
+                        source_rank = last_child_rank
+                if source_rank is not None:
                     if target not in node_rank:
-                        node_rank[target] = node_rank[source] + 1
+                        node_rank[target] = source_rank + 1
                     else:
-                        # target already has a rank; ensure it's at least source+1
-                        node_rank[target] = max(node_rank[target], node_rank[source] + 1)
+                        # target already has a rank; ensure it's at least source_rank+1
+                        node_rank[target] = max(node_rank[target], source_rank + 1)
                 elif target in node_rank:
                     node_rank[source] = node_rank[target] - 1
             elif ctype == "above":
@@ -951,15 +958,28 @@ class RankResolver:
         2. Rank-based: rank-0 nodes use middle anchor, others use closest reference
         3. Constraint-based: explicit left/right constraints (lowest priority)
         """
-        # Build arrow parent map
+        # Build arrow parent map (only within same container)
         arrow_parents: dict[str, str] = {}
         for src, tgt in self._arrow_pairs:
             src_rank = ranked.node_rank.get(src, -1)
             tgt_rank = ranked.node_rank.get(tgt, -1)
-            if tgt_rank > src_rank:
+            src_obj = self.objects.get(src)
+            tgt_obj = self.objects.get(tgt)
+            # Only use as parent if they're in the same container (or both standalone)
+            same_family = (src_obj and tgt_obj and 
+                          (src_obj.parent == tgt_obj.parent or 
+                           (not src_obj.parent and not tgt_obj.parent)))
+            if tgt_rank > src_rank and same_family:
                 arrow_parents[tgt] = src
-            elif src_rank > tgt_rank:
+            elif src_rank > tgt_rank and same_family:
                 arrow_parents[src] = tgt
+
+        # Add flow-v container internal arrows as parents
+        for cname, children in self._flow_v_containers.items():
+            for i in range(len(children) - 1):
+                src, tgt = children[i], children[i + 1]
+                if tgt not in arrow_parents:
+                    arrow_parents[tgt] = src
 
         positioned = set()
 
@@ -1005,10 +1025,14 @@ class RankResolver:
                     node.pos_distance = abs(parent.bottom - node.top)
                     positioned.add(node_name)
                 elif rank.index > 0:
-                    # Use closest node in previous rank
+                    # Use closest node in previous rank, preferring same container
                     prev_rank = ranked.ranks[rank.index - 1]
                     if prev_rank.nodes:
-                        ref_node = min(prev_rank.nodes, key=lambda n: abs(self.objects[n].x - node.x))
+                        # Prefer nodes from the same container
+                        same_container = [n for n in prev_rank.nodes
+                                          if self.objects.get(n) and self.objects[n].parent == node.parent]
+                        candidates = same_container if same_container else prev_rank.nodes
+                        ref_node = min(candidates, key=lambda n: abs(self.objects[n].x - node.x))
                         ref_obj = self.objects[ref_node]
                         node.pos_direction = "below"
                         node.pos_reference = ref_node
