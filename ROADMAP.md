@@ -1,59 +1,87 @@
-# Relic Roadmap: v0.1 → Publication Quality
+# Gemini 3.1 Pro Expert Review — Relic Roadmap
 
-## v0.1 ✅ (Current)
-- Lexer, parser, AST, DAG resolver
-- TikZ backend with relative positioning
-- Container grouping (fit + backgrounds)
-- Flow arrows (auto-generated)
-- Academic theme with styles
-- 50/50 tests passing
+## Rating: 7/10 → Target 10/10
 
-## v0.2 🔄 (In Progress)
-### P0: Math Labels
-- Full LaTeX math in labels: `$\mathbf{W}_Q$`, `$\sum_{i=1}^N$`
-- Auto-detect math delimiters in label strings
-- Pass through to TikZ as-is (TikZ handles LaTeX natively)
+## Key Insights
 
-### P1: Image Embedding
-- `image` primitive: `InputImg [image, src: "cat.png", width: 30mm]`
-- TikZ: `\node[inner sep=0pt] (name) {\includegraphics[width=30mm]{cat.png}};`
+### What Separates 7/10 from 10/10
+1. **Macro-to-Micro Hierarchies (Zoom Callouts)** — show whole system, then zoom into a block
+2. **Tensor Dimensionality Cues** — 3D blocks, stacked planes for multi-dimensional data
+3. **Data Flow vs Architecture** — distinguish operations (boxes) from data (tensors/lines)
+4. **Trunk/Bus Routing** — merge multiple streams into single bus line
 
-### P2: ML Component Library
-- `add` — circle with ⊕ symbol
-- `multiply` — circle with ⊗ symbol
-- `concat` — vertical bar node
-- `softmax` — rounded box with special styling
-- `loss` — diamond shape with function label
+## Priority Features (from Gemini 3.1 Pro)
 
-### P3: Bezier Arrows
-- `arrow A -> B [bezier]` — smooth S-curve
-- `arrow A -> B [orthogonal]` — right-angle routing
-- Arrow label positioning: `label-pos: 0.5` (midpoint), `0.3` (near source)
+### P1: Advanced ML Primitives (Tensors & Stacks)
+```relic
+InputEmbed [tensor3d, width: 20mm, height: 8mm, depth: 5mm, label: "$X$", fill: blue!20]
+  annotate top: "$N$"
+  annotate right: "$d_{model}$"
 
-### P4: Opacity / Ghosting
-- `opacity: 0.2` on any object or container
-- `ghost: true` shorthand for 20% opacity
-- TikZ: `opacity=0.2, fill opacity=0.2`
+container EncoderStack [flow-v, stack-count: "$N\times$", stack-offset: "-2mm, 2mm"]:
+  MHA_Enc [box, label: "Multi-Head Attention"]
+  FFN_Enc [box, label: "Feed Forward"]
+```
+- tensor3d: custom TikZ \pic or 3d library cuboid
+- stack-count: loop in TikZ, offset rectangles with lower opacity
 
-### P5: Comment Support
-- `//` line comments in .relic source
-- `/* ... */` block comments
+### P2: Macro-to-Micro Callouts
+```relic
+TransformerBlock [box, label: "Transformer Block"]
 
-### P6: Professional Color Palettes
-- `nord` theme (muted blues, grays)
-- `viridis` theme (scientific)
-- `pastel` theme (soft)
-- Rule of Three: primary/neutral/highlight colors
+container BlockInternals [flow-v, gap: 5mm]:
+  MHA [box, label: "MHA"]
+  FFN [box, label: "FFN"]
 
-## v0.3 (Future)
-- Data viz primitives (plots, heatmaps)
-- Tensor visualization (3D blocks)
-- Zoom-in callouts
-- Clipping masks
-- Grid container layout
-- SVG backend
+callout TransformerBlock -> BlockInternals [style: dashed, fill: gray!10]
+```
+- Callout acts as rank-breaker in resolver
+- Draws transparent trapezoid connecting source corners to target bbox
 
-## v0.4 (Future)
-- Live preview (VS Code extension)
-- Template library (common architectures)
-- TikZ → Relic round-trip parser
+### P3: Bus Routing & Edge Bundling
+```relic
+bus AttentionInputs [layout: flow-h, gap: 5mm]:
+  Q [box, label: "$Q$"]
+  K [box, label: "$K$"]
+  V [box, label: "$V$"]
+
+arrow AttentionInputs -> MHA [route: bundled-orthogonal]
+```
+- Calculate central "trunk" coordinate
+- Q/K/V route orthogonally to trunk, merge, single thick arrow to target
+
+### P4: Aesthetics & Micro-Typography
+- `shadow: true` → `drop shadow={opacity=0.15}`
+- Port syntax: `arrow A.south -> B.north`
+- `blur shadow` on all nodes
+- Standardized corner radii (3pt)
+- `\sffamily` font for modern look
+
+## Agent-First Loop Design
+
+### Semantic Constraints (not coordinates)
+```
+DecoderStack positioned right-of EncoderStack
+```
+Compiler decides "right-of" = 15mm gap by default.
+
+### Smart Defaults (LLM Safety Net)
+- `arrow A -> B` — compiler picks route automatically based on rank positions
+- Same rank → straight line
+- Adjacent ranks, aligned → straight vertical
+- Offset → `|-` or bundled
+- LLM should almost NEVER specify `[route]`
+
+### LLM System Prompt
+"You are an expert academic figure designer. Write Relic code. Follow these rules:
+1. Identify logical containers first (Encoder, Decoder)
+2. Populate containers using [flow-v] or [flow-h] — let compiler handle alignment
+3. Define arrows strictly by source and target names — do NOT hardcode waypoints
+4. Use [fill: theme-color] semantics (accent-blue, bg-light) rather than hex codes"
+
+### Error Feedback Loop
+Bad: `ResolveError: Node 'PosEnc' not found`
+Good: `ResolveError: Arrow target 'PosEnc' does not exist. Did you mean 'PosEncEnc' or 'PosEncDec'? Declare the node in a container before routing.`
+
+## Target TikZ Blueprint
+See `examples/ideal_multihead_attention.tex` for the 10/10 target.

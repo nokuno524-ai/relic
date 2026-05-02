@@ -129,14 +129,51 @@ class Parser:
                 label_pos = float(p.value) if isinstance(p.value, (int, float)) else float(str(p.value))
         return ArrowDecl(source=src_tok.value, target=tgt_tok.value, style=style, label=label, route=route, label_pos=label_pos, properties=props, line=src_tok.line)
 
+    def _parse_positioned_after_name(self, name: str, line: int) -> ConstraintExpr:
+        """Parse: Name positioned right-of Reference [gap: Nmm]"""
+        self.advance()  # consume 'positioned'
+        dir_tok = self.expect(TokenType.IDENT)
+        direction = dir_tok.value
+        ref_tok = self.expect(TokenType.IDENT)
+        # Optional gap
+        gap = None
+        if self.peek().type == TokenType.LBRACKET:
+            props = self._parse_bracket_props()
+            for p in props:
+                if p.key == "gap":
+                    val = str(p.value)
+                    if isinstance(p.value, (int, float)):
+                        gap = float(p.value)
+                    elif val.endswith("mm"):
+                        gap = float(val[:-2])
+
+        # Convert to constraint
+        direction_map = {
+            "right-of": ("left", "right", 15.0),
+            "left-of": ("right", "left", -15.0),
+            "below": ("top", "bottom", -12.0),
+            "above": ("bottom", "top", 12.0),
+        }
+        if direction not in direction_map:
+            raise ParseError(f"Unknown positioning direction: {direction!r}. Use: right-of, left-of, below, above", dir_tok.line)
+        target_anchor, source_anchor, default_offset = direction_map[direction]
+        offset = gap if gap is not None else default_offset
+        offset_unit = "mm"
+        return ConstraintExpr(
+            target=AnchorRef(name, target_anchor),
+            source=AnchorRef(ref_tok.value, source_anchor),
+            offset=offset,
+            offset_unit=offset_unit,
+        )
+
     def _parse_object_or_constraint(self) -> ObjectDecl | ConstraintExpr:
-        """Parse either an object declaration or a constraint assignment."""
-        # Lookahead: Name.prop = ... is a constraint, Name [ is an object
+        """Parse either an object declaration, constraint, or positioned statement."""
         name_tok = self.advance()
         if self.peek().type == TokenType.DOT:
-            # Constraint: Name.anchor = Source.anchor [+ offset]
             return self._parse_constraint(name_tok.value)
-        # Object declaration: Name [type, props...]
+        # Check for 'positioned' keyword after name
+        if self.peek().type == TokenType.IDENT and self.peek().value == "positioned":
+            return self._parse_positioned_after_name(name_tok.value, name_tok.line)
         return self._parse_object(name_tok.value, name_tok.line)
 
     def _parse_constraint(self, target_name: str) -> ConstraintExpr:
@@ -167,7 +204,8 @@ class Parser:
         remaining_props = []
         for p in props:
             if p.key in ("box", "circle", "diamond", "ellipse", "image",
-                         "add", "multiply", "concat", "softmax", "dropout"):
+                         "add", "multiply", "concat", "softmax", "dropout",
+                         "tensor3d"):
                 obj_type = p.key
             else:
                 remaining_props.append(p)

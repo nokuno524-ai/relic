@@ -18,6 +18,7 @@ class ObjType(Enum):
     ML_CONCAT = auto()
     ML_SOFTMAX = auto()
     ML_DROPOUT = auto()
+    TENSOR3D = auto()
 
 
 @dataclass
@@ -50,6 +51,12 @@ class LayoutObject:
     pos_align_direction: str = ""  # "center-x" or "center-y"
     pos_align_reference: str = ""
 
+    # Drop shadow
+    shadow: bool = False
+    # 3D depth (for tensor3d)
+    depth: float = 5.0  # mm
+    # Annotations
+    annotations: dict = field(default_factory=dict)  # {"top": "$N$", "right": "$d$"}
     # Image-specific
     src: str = ""
     image_width: str = ""  # e.g. "30mm"

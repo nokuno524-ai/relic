@@ -27,6 +27,10 @@ _ML_TYPE_MAP = {
     "dropout": ObjType.ML_DROPOUT,
 }
 
+_TYPE_MAP = {
+    "tensor3d": ObjType.TENSOR3D,
+}
+
 _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "pt": 0.3528, "%": 1.0}
 
 
@@ -135,7 +139,7 @@ class RankResolver:
 
     def _register_object(self, decl: ObjectDecl, parent: str = ""):
         props = _resolve_props(decl)
-        obj_type = _ML_TYPE_MAP.get(decl.obj_type) or ObjType[decl.obj_type.upper()]
+        obj_type = _ML_TYPE_MAP.get(decl.obj_type) or _TYPE_MAP.get(decl.obj_type) or ObjType[decl.obj_type.upper()]
         obj = LayoutObject(
             name=decl.name,
             obj_type=obj_type,
@@ -160,6 +164,15 @@ class RankResolver:
             obj.opacity = 0.2
         elif "opacity" in props:
             obj.opacity = float(props["opacity"])
+        if "shadow" in props and props["shadow"]:
+            obj.shadow = True
+        if "depth" in props and isinstance(props["depth"], (int, float)):
+            obj.depth = float(props["depth"])
+        # Parse annotations
+        for key in ("annotate-top", "annotate-right", "annotate-bottom", "annotate-left"):
+            if key in props:
+                direction = key.replace("annotate-", "")
+                obj.annotations[direction] = str(props[key])
         self.objects[decl.name] = obj
         if parent:
             obj.parent = parent
@@ -279,6 +292,22 @@ class RankResolver:
         """Collect arrow source/target pairs."""
         for child in children:
             if isinstance(child, ArrowDecl):
+                # Validate references with fuzzy matching
+                all_names = list(self.objects.keys())
+                if child.source not in self.objects:
+                    from .errors import suggest_names
+                    suggestions = suggest_names(child.source, all_names)
+                    raise ResolveError(
+                        f"Arrow source '{child.source}' does not exist.",
+                        suggestions=suggestions,
+                    )
+                if child.target not in self.objects:
+                    from .errors import suggest_names
+                    suggestions = suggest_names(child.target, all_names)
+                    raise ResolveError(
+                        f"Arrow target '{child.target}' does not exist.",
+                        suggestions=suggestions,
+                    )
                 self._arrow_pairs.append((child.source, child.target))
             elif hasattr(child, 'children'):
                 self._collect_arrows(child.children)

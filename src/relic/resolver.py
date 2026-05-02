@@ -24,6 +24,8 @@ def resolve(figure: FigureDecl) -> FlatIR:
     try:
         resolver = RankResolver()
         return resolver.resolve(figure)
+    except ResolveError:
+        raise  # Don't fall back for resolve errors (bad references)
     except Exception as e:
         print(f"[resolver] Rank resolver failed ({e}), falling back to legacy resolver", file=sys.stderr)
         return _legacy_resolve(figure)
@@ -37,6 +39,10 @@ _ML_TYPE_MAP = {
     "concat": ObjType.ML_CONCAT,
     "softmax": ObjType.ML_SOFTMAX,
     "dropout": ObjType.ML_DROPOUT,
+}
+
+_TYPE_MAP = {
+    "tensor3d": ObjType.TENSOR3D,
 }
 
 _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "pt": 0.3528, "%": 1.0}
@@ -133,7 +139,7 @@ class _LegacyResolver:
 
     def _register_object(self, decl: ObjectDecl, parent: str = ""):
         props = _resolve_props(decl)
-        obj_type = _ML_TYPE_MAP.get(decl.obj_type) or ObjType[decl.obj_type.upper()]
+        obj_type = _ML_TYPE_MAP.get(decl.obj_type) or _TYPE_MAP.get(decl.obj_type) or ObjType[decl.obj_type.upper()]
         obj = LayoutObject(
             name=decl.name, obj_type=obj_type,
             label=str(props.get("label", decl.name)),
@@ -157,6 +163,14 @@ class _LegacyResolver:
             obj.opacity = 0.2
         elif "opacity" in props:
             obj.opacity = float(props["opacity"])
+        if "shadow" in props and props["shadow"]:
+            obj.shadow = True
+        if "depth" in props and isinstance(props["depth"], (int, float)):
+            obj.depth = float(props["depth"])
+        for key in ("annotate-top", "annotate-right", "annotate-bottom", "annotate-left"):
+            if key in props:
+                direction = key.replace("annotate-", "")
+                obj.annotations[direction] = str(props[key])
         self.objects[decl.name] = obj
         self._register_children(decl.children)
 

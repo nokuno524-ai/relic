@@ -5,7 +5,7 @@ from __future__ import annotations
 from .ast_nodes import Token, TokenType
 from .errors import LexError
 
-_KEYWORDS = {"figure", "container", "panel", "grid", "arrow"}
+_KEYWORDS = {"figure", "container", "panel", "grid", "arrow", "positioned"}
 _UNITS = {"mm", "cm", "pt", "%"}
 
 

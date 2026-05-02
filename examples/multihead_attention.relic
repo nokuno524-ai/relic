@@ -1,0 +1,35 @@
+figure "Multi-Head Attention":
+    // Data Inputs (Tensors)
+    Q [tensor3d, width: 12, height: 15, depth: 4, label: "$Q$", annotate-top: "$N$", annotate-right: "$d_k$"]
+    K [tensor3d, width: 12, height: 15, depth: 4, label: "$K$", annotate-top: "$N$", annotate-right: "$d_k$"]
+    V [tensor3d, width: 12, height: 15, depth: 4, label: "$V$", annotate-top: "$N$", annotate-right: "$d_v$"]
+    K positioned right-of Q [gap: 20]
+    V positioned right-of K [gap: 20]
+
+    // Linear Layers
+    LinQ [box, label: "Linear", fill: "orange!70", shadow: true]
+    LinK [box, label: "Linear", fill: "orange!70", shadow: true]
+    LinV [box, label: "Linear", fill: "orange!70", shadow: true]
+    LinQ positioned above Q [gap: 12]
+    LinK positioned above K [gap: 12]
+    LinV positioned above V [gap: 12]
+
+    // Scaled Dot-Product Attention
+    SDP [box, label: "Scaled Dot-Product\nAttention", fill: "purple!70", width: 40, shadow: true]
+    SDP positioned above LinK [gap: 12]
+
+    // Concat & Final Linear
+    Concat [box, label: "Concat", fill: "green!70", width: 55, shadow: true]
+    LinFinal [box, label: "Linear", fill: "orange!70", shadow: true]
+    Concat positioned above SDP [gap: 12]
+    LinFinal positioned above Concat [gap: 10]
+
+    // Arrows
+    arrow Q -> LinQ
+    arrow K -> LinK
+    arrow V -> LinV
+    arrow LinQ -> SDP
+    arrow LinK -> SDP
+    arrow LinV -> SDP
+    arrow SDP -> Concat
+    arrow Concat -> LinFinal

@@ -20,6 +20,7 @@ _OBJ_TYPE_TO_TIKZ = {
     ObjType.ML_CONCAT: "rectangle",
     ObjType.ML_SOFTMAX: "rectangle",
     ObjType.ML_DROPOUT: "rectangle",
+    ObjType.TENSOR3D: "rectangle",
 }
 
 # Regex patterns for math mode detection
@@ -83,7 +84,12 @@ def generate_tikz(ir: FlatIR) -> str:
     lines.append(r"\documentclass[border=2mm]{standalone}")
     lines.append(r"\usepackage{amsmath}")
     lines.append(r"\usepackage{tikz}")
+    # Detect if we need shadows.blur library
+    needs_shadow = any(obj.shadow for obj in ir.objects.values())
+    
     lines.append(r"\usetikzlibrary{arrows.meta, positioning, calc, fit, backgrounds}")
+    if needs_shadow:
+        lines[-1] = r"\usetikzlibrary{arrows.meta, positioning, calc, fit, backgrounds, shadows.blur}"
     lines.append("")
     lines.append(r"\begin{document}")
     lines.append(r"\begin{tikzpicture}[")
@@ -151,12 +157,15 @@ def generate_tikz(ir: FlatIR) -> str:
         # Handle fill override
         if obj.fill:
             resolved = theme.resolve_color(obj.fill)
-            # If resolved already has ! (like blue!70), use it for draw and make a lighter version for fill
             if '!' in resolved:
                 base, intensity = resolved.split('!', 1)
                 style += f", fill={base}!15, draw={base}!{intensity}"
             else:
                 style += f", fill={resolved}!15, draw={resolved}!70"
+
+        # Handle shadow
+        if obj.shadow:
+            style += ", blur shadow={shadow blur steps=5, shadow opacity=10}"
 
         # Handle image type
         if obj.obj_type == ObjType.IMAGE:
@@ -199,6 +208,28 @@ def generate_tikz(ir: FlatIR) -> str:
             lines.append(f"  \\node[{style}{opacity_part}] ({name}) {{{label}}};")
 
     lines.append("")
+
+    # Draw tensor3D depth effects
+    tensor3d_nodes = [(name, obj) for name, obj in non_containers if obj.obj_type == ObjType.TENSOR3D]
+    if tensor3d_nodes:
+        lines.append("  % Tensor3D depth effects")
+        for name, obj in tensor3d_nodes:
+            d = obj.depth
+            lines.append(f"  \\begin{{scope}}")
+            lines.append(f"    \\fill[fill=blue!5, draw=blue!30] ([xshift={d:.1f}mm, yshift={d:.1f}mm]{name}.south west) rectangle ([xshift={d:.1f}mm, yshift={d:.1f}mm]{name}.north east);")
+            lines.append(f"  \\end{{scope}}")
+        lines.append("")
+
+    # Draw annotations
+    has_annotations = any(obj.annotations for _, obj in non_containers)
+    if has_annotations:
+        lines.append("  % Annotations")
+        for name, obj in non_containers:
+            for direction, text in obj.annotations.items():
+                pos_map = {"top": "above=1mm", "bottom": "below=1mm", "left": "left=1mm", "right": "right=1mm"}
+                pos = pos_map.get(direction, "above=1mm")
+                lines.append(f"  \\node[{pos} of {name}, font=\\scriptsize] {{{_format_label(text)}}};")
+        lines.append("")
 
     # Fix 3: Visual container grouping
     container_meta = ir.container_meta

@@ -1,5 +1,7 @@
 """Error types for the Relic language."""
 
+import difflib
+
 
 class RelicError(Exception):
     """Base error for all Relic errors."""
@@ -33,8 +35,17 @@ class CyclicDependencyError(RelicError):
 class ResolveError(RelicError):
     """Error during constraint resolution."""
 
-    def __init__(self, message: str):
-        super().__init__(f"Resolve error: {message}")
+    def __init__(self, message: str, suggestions: list[str] | None = None):
+        self.suggestions = suggestions or []
+        msg = f"Resolve error: {message}"
+        if self.suggestions:
+            msg += f" Did you mean: {', '.join(repr(s) for s in self.suggestions)}?"
+        super().__init__(msg)
+
+
+def suggest_names(name: str, candidates: list[str], n: int = 3) -> list[str]:
+    """Return close matches for a name from a list of candidates."""
+    return difflib.get_close_matches(name, candidates, n=n, cutoff=0.5)
 
 
 class CodegenError(RelicError):
