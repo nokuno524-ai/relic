@@ -584,6 +584,8 @@ def _anchor_to_tikz(anchor: str) -> str:
     return {
         "right": ".east",
         "left": ".west",
+        "east": ".east",
+        "west": ".west",
         "top": ".south",
         "bottom": ".north",
     }.get(anchor, "")

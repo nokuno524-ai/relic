@@ -843,7 +843,27 @@ class RankResolver:
             src_rank = ranked.node_rank.get(arrow.source, -1)
             tgt_rank = ranked.node_rank.get(arrow.target, -1)
 
-            if src_rank == tgt_rank:
+            # Detect cross-column arrows (different parent containers)
+            src_obj = self.objects.get(arrow.source)
+            tgt_obj = self.objects.get(arrow.target)
+            cross_column = (src_obj and tgt_obj and
+                           src_obj.parent and tgt_obj.parent and
+                           src_obj.parent != tgt_obj.parent)
+
+            if cross_column:
+                # Cross-column: use east/west anchors
+                if src.x < tgt.x:
+                    arrow.source_anchor = "east"
+                    arrow.target_anchor = "west"
+                else:
+                    arrow.source_anchor = "west"
+                    arrow.target_anchor = "east"
+                arrow.waypoints = []
+                # If also different ranks, add a bend
+                if src_rank != tgt_rank:
+                    # East-to-west: horizontal then vertical = -|
+                    arrow.waypoints = [Waypoint(type="l-bend-h")]
+            elif src_rank == tgt_rank:
                 # Intra-rank: horizontal arrow
                 arrow.source_anchor = "right" if src.x < tgt.x else "left"
                 arrow.target_anchor = "left" if src.x < tgt.x else "right"

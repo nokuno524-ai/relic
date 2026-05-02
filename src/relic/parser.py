@@ -58,7 +58,7 @@ class Parser:
                 break
             item = self._parse_statement()
             if item is not None:
-                if isinstance(item, list):
+                if isinstance(item, (list, tuple)):
                     items.extend(item)
                 else:
                     items.append(item)
@@ -200,12 +200,22 @@ class Parser:
         target_anchor, source_anchor, default_offset = direction_map[direction]
         offset = gap if gap is not None else default_offset
         offset_unit = "mm"
-        return ConstraintExpr(
+        primary = ConstraintExpr(
             target=AnchorRef(name, target_anchor),
             source=AnchorRef(ref_tok.value, source_anchor),
             offset=offset,
             offset_unit=offset_unit,
         )
+        # For vertical positioning, also emit a center-x constraint
+        if direction in ("below", "above"):
+            centering = ConstraintExpr(
+                target=AnchorRef(name, "center-x"),
+                source=AnchorRef(ref_tok.value, "center-x"),
+                offset=0.0,
+                offset_unit="mm",
+            )
+            return (primary, centering)
+        return primary
 
     def _parse_object_or_constraint(self) -> ObjectDecl | ConstraintExpr:
         """Parse either an object declaration, constraint, or positioned statement."""

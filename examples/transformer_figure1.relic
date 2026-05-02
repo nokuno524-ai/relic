@@ -29,7 +29,7 @@ figure "Transformer Architecture" [theme: academic]:
     // Output below decoder
     Linear [box, label: "Linear", fill: "green!70", shadow: true]
     Softmax [box, label: "Softmax", fill: "green!70", shadow: true]
-    Linear positioned below Decoder [gap: 10]
+    Linear positioned below Decoder [gap: 12]
     Softmax positioned below Linear [gap: 6]
     
     // Arrows
@@ -40,7 +40,7 @@ figure "Transformer Architecture" [theme: academic]:
     arrow Linear -> Softmax
     
     // === Attention detail (inset panel below, left-aligned) ===
-    container AttentionDetail [flow-v, gap: 4]:
+    container AttentionDetail [flow-v, gap: 6]:
         QKVRow [box, label: "Q    K    V"]
         MatMul1 [box, label: "MatMul"]
         Scale [box, label: "Scale"]
@@ -52,5 +52,5 @@ figure "Transformer Architecture" [theme: academic]:
         arrow Soft -> MatMul2
     
     AttnLabel [box, label: "Scaled Dot-Product Attention", shadow: true]
-    AttentionDetail positioned below Encoder [gap: 20]
+    AttentionDetail positioned below Encoder [gap: 25]
     AttnLabel positioned above AttentionDetail [gap: 4]
