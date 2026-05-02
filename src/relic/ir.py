@@ -7,6 +7,15 @@ from .objects import LayoutObject, ArrowObject, ObjType
 
 
 @dataclass
+class CalloutInfo:
+    """Resolved callout between two objects."""
+    source: str
+    target: str
+    style: str = "dashed"
+    fill: str = "gray!5"
+
+
+@dataclass
 class FlatIR:
     """Resolved, flat intermediate representation."""
     objects: dict[str, LayoutObject] = field(default_factory=dict)
@@ -15,6 +24,7 @@ class FlatIR:
     figure_name: str = ""
     width: float = 140.0  # mm
     height: float = 100.0  # mm
+    callouts: list[CalloutInfo] = field(default_factory=list)
 
     @property
     def containers(self) -> dict[str, list[str]]:

@@ -97,6 +97,16 @@ class ArrowDecl:
 
 
 @dataclass
+class CalloutStmt:
+    """Callout: callout Source -> Target [style: dashed, fill: gray!5]"""
+    source: str
+    target: str
+    style: str = "dashed"
+    fill: str = "gray!5"
+    line: int = 0
+
+
+@dataclass
 class FigureDecl:
     """Top-level figure declaration."""
     name: str

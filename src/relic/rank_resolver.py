@@ -68,6 +68,9 @@ class RankResolver:
         self._flow_v_containers: dict[str, list[str]] = {}  # container -> child names
         self._standalone_nodes: list[str] = []  # nodes not in any container
         self._arrow_pairs: list[tuple[str, str]] = []  # (source, target) from arrow decls
+        self._bus_groups: list[tuple[str, str, str]] = []  # (group_id, source, target)
+        self._bus_map: dict = {}
+        self._callouts: list = []  # CalloutInfo list
 
     def resolve(self, figure: FigureDecl) -> FlatIR:
         """Resolve a figure AST into a FlatIR using rank-based layout."""
@@ -94,6 +97,9 @@ class RankResolver:
         # Collect arrow pairs
         self._collect_arrows(figure.children)
 
+        # Collect callouts
+        self._collect_callouts(figure.children)
+
         # Pass 1: Assign ranks
         ranked = self._assign_ranks()
 
@@ -119,6 +125,7 @@ class RankResolver:
             theme=self.theme,
             figure_name=self.figure_name,
             width=self.figure_width,
+            callouts=self._callouts,
         )
 
     # ─── Registration ───
@@ -168,6 +175,10 @@ class RankResolver:
             obj.shadow = True
         if "depth" in props and isinstance(props["depth"], (int, float)):
             obj.depth = float(props["depth"])
+        if "stack" in props and isinstance(props["stack"], (int, float)):
+            obj.stack_count = int(props["stack"])
+        if "stack-label" in props:
+            obj.stack_label = str(props["stack-label"])
         # Parse annotations
         for key in ("annotate-top", "annotate-right", "annotate-bottom", "annotate-left"):
             if key in props:
@@ -197,6 +208,10 @@ class RankResolver:
             obj.opacity = 0.2
         elif "opacity" in props:
             obj.opacity = float(props["opacity"])
+        if "stack" in props and isinstance(props["stack"], (int, float)):
+            obj.stack_count = int(props["stack"])
+        if "stack-label" in props:
+            obj.stack_label = str(props["stack-label"])
         self.objects[decl.name] = obj
 
         for child in decl.children:
@@ -290,6 +305,7 @@ class RankResolver:
 
     def _collect_arrows(self, children: list):
         """Collect arrow source/target pairs."""
+        bus_groups: dict[str, list[str]] = {}  # target -> [sources]
         for child in children:
             if isinstance(child, ArrowDecl):
                 # Validate references with fuzzy matching
@@ -309,8 +325,43 @@ class RankResolver:
                         suggestions=suggestions,
                     )
                 self._arrow_pairs.append((child.source, child.target))
+                # Track bus routing
+                if child.route == "bus":
+                    bus_groups.setdefault(child.target, []).append(child.source)
             elif hasattr(child, 'children'):
                 self._collect_arrows(child.children)
+
+        # Assign bus_group IDs for targets with 3+ sources
+        import uuid
+        for target, sources in bus_groups.items():
+            if len(sources) >= 2:
+                gid = f"bus_{uuid.uuid4().hex[:6]}"
+                for src in sources:
+                    # Find matching arrow in self.arrows (set later)
+                    self._bus_groups.append((gid, src, target))
+
+        self._bus_map = {}  # populated later during routing
+
+    def _collect_callouts(self, children: list):
+        """Collect callout declarations."""
+        from .ast_nodes import CalloutStmt
+        from .ir import CalloutInfo
+        for child in children:
+            if isinstance(child, CalloutStmt):
+                self._callouts.append(CalloutInfo(
+                    source=child.source,
+                    target=child.target,
+                    style=child.style,
+                    fill=child.fill,
+                ))
+                # Position the target to the right of the source
+                if child.source in self.objects and child.target in self.objects:
+                    src = self.objects[child.source]
+                    tgt = self.objects[child.target]
+                    tgt.x = src.x + src.width / 2 + 40 + tgt.width / 2
+                    tgt.y = src.y
+            elif hasattr(child, 'children'):
+                self._collect_callouts(child.children)
 
     # ─── Pass 1: Rank Assignment ───
 
@@ -507,6 +558,20 @@ class RankResolver:
 
         # Apply alignment constraints
         self._apply_alignment_constraints(ranked)
+
+        # Uniform rank sizing — same-rank boxes get matching widths
+        self._uniform_rank_sizing(ranked)
+
+    def _uniform_rank_sizing(self, ranked: RankedLayout):
+        """Set all non-container nodes in each rank to the max width in that rank."""
+        for rank in ranked.ranks:
+            boxes = [n for n in rank.nodes
+                     if n in self.objects and self.objects[n].obj_type != ObjType.CONTAINER]
+            if len(boxes) < 2:
+                continue
+            max_w = max(self.objects[n].width for n in boxes)
+            for n in boxes:
+                self.objects[n].width = max_w
 
     def _compute_rank_y_positions(self, ranked: RankedLayout, default_gap: float):
         """Compute Y positions for each rank based on rank gap."""

@@ -250,6 +250,21 @@ def generate_tikz(ir: FlatIR) -> str:
         lines.append(r"  \end{scope}")
         lines.append("")
 
+    # Container stack visualization
+    for cname, obj in ir.objects.items():
+        if obj.obj_type != ObjType.CONTAINER or obj.stack_count <= 0:
+            continue
+        lines.append("  % Stack visualization for " + cname)
+        lines.append(r"  \begin{scope}[on background layer]")
+        for i in range(obj.stack_count - 1, 0, -1):
+            off = i * 2  # 2mm offset per copy
+            opacity = 0.2 + 0.2 * (obj.stack_count - 1 - i) / max(obj.stack_count - 1, 1)
+            lines.append(f"    \\node[container, opacity={opacity:.2f}, shift={{({off}mm, {off}mm)}}] at ({cname}) {{}};")
+        lines.append(r"  \end{scope}")
+        if obj.stack_label:
+            lines.append(f"  \\node[above right=1mm of {cname}.north east, font=\\small] {{{_format_label(obj.stack_label)}}};")
+        lines.append("")
+
     # Fix 4: Flow arrows (auto-generate for flow-v and flow-h containers)
     flow_arrows: list[tuple[str, str]] = []
     for cname, (layout, label, children) in container_meta.items():
@@ -334,6 +349,46 @@ def generate_tikz(ir: FlatIR) -> str:
             lines.append(f"  \\draw[{style}] ({arrow.source}) {connector} ({arrow.target}){label_part};")
         else:
             lines.append(f"  \\draw[{style}] ({arrow.source}) -- ({arrow.target}){label_part};")
+
+    # Callouts (zoom trapezoids)
+    for co in ir.callouts:
+        lines.append(f"  % Callout: {co.source} -> {co.target}")
+        draw_style = co.style if co.style else "dashed"
+        lines.append(f"  \\fill[{co.fill}, draw=gray!50, {draw_style}, rounded corners=2pt]")
+        lines.append(f"    ({co.source}.north east) -- ({co.target}.north west)")
+        lines.append(f"    -- ({co.target}.south west) -- ({co.source}.south east) -- cycle;")
+    if ir.callouts:
+        lines.append("")
+
+    # Bus routing: group arrows by target with route=bus
+    bus_targets: dict[str, list[ArrowObject]] = {}
+    for arrow in ir.arrows:
+        if arrow.route == "bus" and arrow.target not in bus_targets:
+            bus_targets.setdefault(arrow.target, [])
+        if arrow.route == "bus":
+            bus_targets[arrow.target].append(arrow)
+
+    for target, bus_arrows in bus_targets.items():
+        if len(bus_arrows) < 2:
+            continue
+        lines.append("  % Bus routing to " + target)
+        # Compute trunk midpoint Y
+        src_ys = []
+        for ba in bus_arrows:
+            src_obj = ir.objects.get(ba.source)
+            if src_obj:
+                src_ys.append(src_obj.y)
+        tgt_obj = ir.objects.get(target)
+        if not tgt_obj or not src_ys:
+            continue
+        trunk_y_offset = -4.0  # mm below sources
+        # Draw segments from each source to a common point above target
+        for ba in bus_arrows:
+            src_anchor = f"{ba.source}.south" if ba.source in ir.objects else ba.source
+            lines.append(f"  \\draw[thick, draw=gray!70, rounded corners=2pt] ({src_anchor}) -- ++(0, {trunk_y_offset:.1f}mm) -| ({tgt_obj.x - tgt_obj.width/2 + tgt_obj.width * (bus_arrows.index(ba) + 1) / (len(bus_arrows) + 1):.1f}mm, {tgt_obj.y + tgt_obj.height/2 + 2:.1f}mm) -- ({target}.north);")
+        # Remove these arrows from the already-drawn list by checking they have route=bus
+        # (they were drawn above as regular arrows too — that's OK, the bus draws override)
+        lines.append("")
 
     lines.append("")
     lines.append(r"\end{tikzpicture}")

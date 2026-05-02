@@ -58,7 +58,10 @@ class Parser:
                 break
             item = self._parse_statement()
             if item is not None:
-                items.append(item)
+                if isinstance(item, list):
+                    items.extend(item)
+                else:
+                    items.append(item)
             # consume trailing newline
             if self.peek().type == TokenType.NEWLINE:
                 self.advance()
@@ -74,6 +77,8 @@ class Parser:
                 return self._parse_container()
             elif tok.value == "arrow":
                 return self._parse_arrow()
+            elif tok.value == "callout":
+                return self._parse_callout()
             else:
                 return self._parse_object_or_constraint()
         return None
@@ -106,9 +111,17 @@ class Parser:
             properties=remaining_props, children=children, line=kind_tok.line,
         )
 
-    def _parse_arrow(self) -> ArrowDecl:
+    def _parse_arrow(self) -> ArrowDecl | list[ArrowDecl]:
         self.advance()  # consume 'arrow'
-        src_tok = self.expect(TokenType.IDENT)
+
+        # Check for bus syntax: arrow [Q, K, V] -> Target
+        sources = [self.expect(TokenType.IDENT).value]
+        if self.peek().type == TokenType.COMMA:
+            # Multiple sources: arrow A, B, C -> Target
+            while self.peek().type == TokenType.COMMA:
+                self.advance()  # consume comma
+                sources.append(self.expect(TokenType.IDENT).value)
+
         self.expect(TokenType.ARROW)
         tgt_tok = self.expect(TokenType.IDENT)
         props = self._parse_bracket_props() if self.peek().type == TokenType.LBRACKET else []
@@ -123,11 +136,39 @@ class Parser:
                 label = str(p.value)
             elif p.key in ("dashed", "dotted", "solid"):
                 style = p.key
-            elif p.key in ("bezier", "orthogonal"):
+            elif p.key in ("bezier", "orthogonal", "bus"):
                 route = p.key
             elif p.key == "label-pos":
                 label_pos = float(p.value) if isinstance(p.value, (int, float)) else float(str(p.value))
-        return ArrowDecl(source=src_tok.value, target=tgt_tok.value, style=style, label=label, route=route, label_pos=label_pos, properties=props, line=src_tok.line)
+
+        if len(sources) == 1:
+            return ArrowDecl(source=sources[0], target=tgt_tok.value, style=style, label=label, route=route, label_pos=label_pos, properties=props, line=0)
+        else:
+            # Bus: create one ArrowDecl per source with shared bus_group
+            import uuid
+            bus_id = f"bus_{uuid.uuid4().hex[:6]}"
+            arrows = []
+            for src in sources:
+                arrows.append(ArrowDecl(source=src, target=tgt_tok.value, style=style, label=label, route=route or "bus", label_pos=label_pos, properties=props, line=0))
+            return arrows
+
+    def _parse_callout(self):
+        """Parse: callout Source -> Target [style: dashed, fill: gray!5]"""
+        self.advance()  # consume 'callout'
+        from .ast_nodes import CalloutStmt
+        src_tok = self.expect(TokenType.IDENT)
+        self.expect(TokenType.ARROW)
+        tgt_tok = self.expect(TokenType.IDENT)
+        style = "dashed"
+        fill = "gray!5"
+        if self.peek().type == TokenType.LBRACKET:
+            props = self._parse_bracket_props()
+            for p in props:
+                if p.key == "style":
+                    style = str(p.value)
+                elif p.key == "fill":
+                    fill = str(p.value)
+        return CalloutStmt(source=src_tok.value, target=tgt_tok.value, style=style, fill=fill)
 
     def _parse_positioned_after_name(self, name: str, line: int) -> ConstraintExpr:
         """Parse: Name positioned right-of Reference [gap: Nmm]"""

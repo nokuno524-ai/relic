@@ -55,6 +55,9 @@ class LayoutObject:
     shadow: bool = False
     # 3D depth (for tensor3d)
     depth: float = 5.0  # mm
+    # Container stack
+    stack_count: int = 0  # number of stacked copies
+    stack_label: str = ""  # e.g. "$\\times N$"
     # Annotations
     annotations: dict = field(default_factory=dict)  # {"top": "$N$", "right": "$d$"}
     # Image-specific
@@ -171,3 +174,4 @@ class ArrowObject:
     source_anchor: str = ""  # "bottom", "top", "left", "right"
     target_anchor: str = ""
     auto_routed: bool = False
+    bus_group: str = ""  # shared ID for bus-routed arrows

@@ -1,0 +1,22 @@
+figure "Transformer Encoder Stack" [theme: academic]:
+    // Input
+    Input [box, label: "Input Embedding", shadow: true]
+    
+    // Encoder stack (N copies)
+    container Encoder [flow-v, gap: 8, stack: 3, stack-label: "$\\times N$"]:
+        SA [box, label: "Self-Attention", fill: "blue!70", shadow: true]
+        Add1 [add, label: "$\\oplus$"]
+        LN1 [box, label: "Layer Norm", shadow: true]
+        FFN [box, label: "Feed-Forward", fill: "orange!70", shadow: true]
+        Add2 [add, label: "$\\oplus$"]
+        LN2 [box, label: "Layer Norm", shadow: true]
+    
+    Encoder positioned below Input [gap: 15]
+    
+    // Output
+    Output [box, label: "Output", fill: "green!70", shadow: true]
+    Output positioned below Encoder [gap: 15]
+    
+    // Arrows
+    arrow Input -> SA
+    arrow LN2 -> Output
