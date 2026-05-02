@@ -107,6 +107,26 @@ def generate_tikz(ir: FlatIR) -> str:
     non_containers = [(name, obj) for name, obj in ir.objects.items()
                       if obj.obj_type != ObjType.CONTAINER]
 
+    # Topologically sort nodes so that referenced nodes come before referencing nodes
+    # Build dependency graph from pos_reference
+    nc_dict = {name: obj for name, obj in non_containers}
+    visited = set()
+    sorted_nodes = []
+    
+    def visit(name):
+        if name in visited:
+            return
+        visited.add(name)
+        obj = nc_dict.get(name)
+        if obj and obj.pos_reference and obj.pos_reference in nc_dict:
+            visit(obj.pos_reference)
+        sorted_nodes.append(name)
+    
+    for name, obj in non_containers:
+        visit(name)
+    
+    non_containers = [(name, nc_dict[name]) for name in sorted_nodes]
+
     # Find the anchor node (first non-container with no positioning metadata)
     anchor_name = None
     positioned_names = set()
