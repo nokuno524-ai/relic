@@ -344,8 +344,9 @@ def generate_tikz(ir: FlatIR) -> str:
 
 def _format_label(label: str) -> str:
     """Format a label: wrap math, escape LaTeX."""
+    # Convert \n to LaTeX line break
+    label = label.replace('\\n', '\\\\').replace('\n', '\\\\')
     if _has_math_mode(label):
-        # Label already has $...$ math — skip wrapping, do minimal escaping
         return _escape_latex(label)
     label = _wrap_math(label)
     return _escape_latex(label)
