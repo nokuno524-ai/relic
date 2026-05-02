@@ -399,12 +399,20 @@ def generate_tikz(ir: FlatIR) -> str:
 
 def _format_label(label: str) -> str:
     """Format a label: wrap math, escape LaTeX."""
-    # Convert \n to LaTeX line break
-    label = label.replace('\\n', '\\\\').replace('\n', '\\\\')
+    LINEBREAK = '\x00LB\x00'
+    # Handle double-backslash-n first (source: \\n = 3 actual chars)
+    label = label.replace('\\\\n', LINEBREAK)
+    # Then single-backslash-n (source: \n = 2 actual chars)
+    label = label.replace('\\n', LINEBREAK)
+    # Then actual newlines
+    label = label.replace('\n', LINEBREAK)
     if _has_math_mode(label):
-        return _escape_latex(label)
-    label = _wrap_math(label)
-    return _escape_latex(label)
+        result = _escape_latex(label)
+    else:
+        result = _escape_latex(_wrap_math(label))
+    # Replace placeholder with LaTeX line break
+    result = result.replace(LINEBREAK, '\\\\')
+    return result
 
 
 def _escape_latex(text: str) -> str:

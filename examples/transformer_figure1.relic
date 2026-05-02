@@ -1,0 +1,67 @@
+figure "Transformer Architecture" [theme: academic]:
+    // === Macro View: Encoder-Decoder ===
+    
+    // Inputs
+    Inputs [box, label: "Inputs", fill: "blue!70", shadow: true]
+    OutputEmbed [box, label: "Output\\nEmbedding", fill: "blue!70", shadow: true]
+    OutputEmbed positioned right-of Inputs [gap: 50]
+    
+    // Encoder Stack
+    container Encoder [flow-v, gap: 6, stack: 3, stack-label: "$\\times N$", shadow: true]:
+        EncSA [box, label: "Self-Attention", fill: "purple!70"]
+        EncAdd1 [add, label: "$\\oplus$"]
+        EncFFN [box, label: "Feed-Forward", fill: "orange!70"]
+        EncAdd2 [add, label: "$\\oplus$"]
+    
+    Encoder positioned below Inputs [gap: 12]
+    
+    // Decoder Stack
+    container Decoder [flow-v, gap: 6, stack: 3, stack-label: "$\\times N$", shadow: true]:
+        DecSA [box, label: "Self-Attention", fill: "purple!70"]
+        DecAdd1 [add, label: "$\\oplus$"]
+        DecCA [box, label: "Cross-Attention", fill: "red!70"]
+        DecAdd2 [add, label: "$\\oplus$"]
+        DecFFN [box, label: "Feed-Forward", fill: "orange!70"]
+        DecAdd3 [add, label: "$\\oplus$"]
+    
+    Decoder positioned below OutputEmbed [gap: 12]
+    
+    // Output
+    Linear [box, label: "Linear", fill: "green!70", shadow: true]
+    Softmax [box, label: "Softmax", fill: "green!70", shadow: true]
+    Linear positioned below Decoder [gap: 15]
+    Softmax positioned below Linear [gap: 8]
+    
+    // Macro arrows
+    arrow Inputs -> EncSA
+    arrow OutputEmbed -> DecSA
+    arrow EncAdd2 -> DecCA [style: dashed, label: "K, V"]
+    arrow DecAdd3 -> Linear
+    arrow Linear -> Softmax
+    
+    // === Micro View: Scaled Dot-Product Attention ===
+    container AttentionDetail [flow-v, gap: 5, shadow: true]:
+        Q [box, label: "$Q$", fill: "blue!70"]
+        K [box, label: "$K$", fill: "blue!70"]
+        V [box, label: "$V$", fill: "blue!70"]
+        Q positioned right-of K [gap: 8]
+        V positioned left-of K [gap: 8]
+        MatMul1 [box, label: "MatMul"]
+        Scale [box, label: "Scale", fill: "orange!70"]
+        Mask [box, label: "Mask", fill: "red!70", opacity: 0.5]
+        Soft [box, label: "Softmax", fill: "green!70"]
+        MatMul2 [box, label: "MatMul"]
+        arrow Q, K -> MatMul1 [route: bus]
+        arrow MatMul1 -> Scale
+        arrow Scale -> Soft
+        arrow V -> MatMul2
+        arrow Soft -> MatMul2
+    
+    AttentionDetail positioned right-of Decoder [gap: 40]
+    
+    // Callout from macro attention to micro detail
+    callout EncSA -> AttentionDetail [style: dashed, fill: "gray!5"]
+    
+    // Title for micro view
+    AttnLabel [box, label: "Scaled Dot-Product Attention", shadow: true]
+    AttnLabel positioned above AttentionDetail [gap: 5]
