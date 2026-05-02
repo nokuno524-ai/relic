@@ -83,14 +83,15 @@ class TestFlowArrows:
         )
         assert "\\draw[relicarrow] (X) -- (Y);" in tex
 
-    def test_flow_h_arrows(self):
+    def test_flow_h_no_arrows(self):
+        """flow-h containers should NOT auto-generate arrows (children are parallel)."""
         tex = _compile(
             'figure "T" []:\n'
             '  container C [flow-h, gap: 10mm]:\n'
             '    X [box, label: "X"]\n'
             '    Y [box, label: "Y"]'
         )
-        assert "\\draw[relicarrow] (X) -- (Y);" in tex
+        assert "\\draw[relicarrow] (X) -- (Y);" not in tex
 
     def test_no_flow_arrows_for_explicit(self):
         """Explicit arrows use relicarrow style too."""

@@ -193,7 +193,7 @@ def generate_tikz(ir: FlatIR) -> str:
     # Fix 4: Flow arrows (auto-generate for flow-v and flow-h containers)
     flow_arrows: list[tuple[str, str]] = []
     for cname, (layout, label, children) in container_meta.items():
-        if layout in ("flow-v", "flow-h"):
+        if layout == "flow-v":
             for i in range(len(children) - 1):
                 flow_arrows.append((children[i], children[i + 1]))
 
@@ -248,9 +248,22 @@ def generate_tikz(ir: FlatIR) -> str:
                 ctrl_str = " and ".join(ctrls)
                 lines.append(f"  \\draw[{style}] {src_ref} .. controls ({ctrl_str}) .. {tgt_ref}{label_part};")
             else:
-                # Z-bend or multi-segment: use relational waypoints
-                wp_parts = " -- ".join(_waypoint_to_tikz(wp) for wp in arrow.waypoints)
-                lines.append(f"  \\draw[{style}] {src_ref} -- {wp_parts} -- {tgt_ref}{label_part};")
+                # Z-bend or multi-segment
+                z_escapes = [wp for wp in arrow.waypoints if wp.type == "z-bend-escape"]
+                if z_escapes:
+                    # Z-bend: source → escape point → -| → target
+                    wp = z_escapes[0]
+                    shifts = []
+                    if abs(wp.y_offset) > 0.01:
+                        shifts.append(f"yshift={wp.y_offset:.1f}mm")
+                    if shifts:
+                        escape = f"([{', '.join(shifts)}]{arrow.source}{_anchor_to_tikz(arrow.source_anchor)})"
+                    else:
+                        escape = f"({arrow.source}{_anchor_to_tikz(arrow.source_anchor)})"
+                    lines.append(f"  \\draw[{style}] {src_ref} -- {escape} -| {tgt_ref}{label_part};")
+                else:
+                    wp_parts = " -- ".join(_waypoint_to_tikz(wp) for wp in arrow.waypoints)
+                    lines.append(f"  \\draw[{style}] {src_ref} -- {wp_parts} -- {tgt_ref}{label_part};")
         elif arrow.route == "bezier":
             # Calculate angles based on relative position
             src_obj = ir.objects.get(arrow.source)
@@ -375,7 +388,11 @@ def _waypoint_to_tikz(wp) -> str:
 
 
 def _bezier_angles(src_obj, tgt_obj) -> tuple[int, int]:
-    """Calculate out/in angles for bezier arrows based on relative positions."""
+    """Calculate out/in angles for bezier arrows based on relative positions.
+    
+    Uses y-down coordinates: dy > 0 means target is below source,
+    so arrow goes downward (out=270, in=90).
+    """
     if src_obj is None or tgt_obj is None:
         return 0, 180
     dx = tgt_obj.x - src_obj.x
@@ -387,20 +404,25 @@ def _bezier_angles(src_obj, tgt_obj) -> tuple[int, int]:
         else:
             return 180, 0
     else:
-        # Primarily vertical
+        # Primarily vertical (y-down: dy > 0 = target below = downward arrow)
         if dy >= 0:
-            return 90, 270
-        else:
             return 270, 90
+        else:
+            return 90, 270
 
 
 def _anchor_to_tikz(anchor: str) -> str:
-    """Map anchor direction to TikZ anchor suffix."""
+    """Map anchor direction to TikZ anchor suffix.
+    
+    The resolver uses y-down coordinates internally:
+    - 'top' (y + h/2) is the visual bottom → TikZ .south
+    - 'bottom' (y - h/2) is the visual top → TikZ .north
+    """
     return {
         "right": ".east",
         "left": ".west",
-        "top": ".north",
-        "bottom": ".south",
+        "top": ".south",
+        "bottom": ".north",
     }.get(anchor, "")
 
 

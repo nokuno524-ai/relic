@@ -348,18 +348,30 @@ class Resolver:
             primary = None
             align = None
             for c in constraints:
-                # Skip constraints referencing containers (handled above or irrelevant for TikZ)
                 source_obj = self.objects.get(c.source_name)
-                if source_obj and source_obj.obj_type == ObjType.CONTAINER:
-                    continue
                 direction = _constraint_to_direction(c)
                 if direction:
+                    # If source is a container, resolve to its last leaf child
+                    if source_obj and source_obj.obj_type == ObjType.CONTAINER:
+                        ref = self._last_leaf(c.source_name)
+                        if ref is None:
+                            ref = c.source_name
+                    else:
+                        ref = c.source_name
                     dist = abs(_offset_to_mm(c.offset, c.offset_unit))
-                    primary = (direction, c.source_name, dist)
+                    primary = (direction, ref, dist)
                 elif c.target_anchor in ("center-x",) and c.source_anchor in ("center-x",):
-                    align = ("center-x", c.source_name)
+                    if source_obj and source_obj.obj_type == ObjType.CONTAINER:
+                        align_ref = c.source_name  # keep container for alignment
+                    else:
+                        align_ref = c.source_name
+                    align = ("center-x", align_ref)
                 elif c.target_anchor in ("center-y",) and c.source_anchor in ("center-y",):
-                    align = ("center-y", c.source_name)
+                    if source_obj and source_obj.obj_type == ObjType.CONTAINER:
+                        align_ref = c.source_name
+                    else:
+                        align_ref = c.source_name
+                    align = ("center-y", align_ref)
             if primary:
                 obj.pos_direction, obj.pos_reference, obj.pos_distance = primary
             if align:
@@ -374,6 +386,25 @@ class Resolver:
             child = self.objects.get(cname)
             if child and child.obj_type == ObjType.CONTAINER:
                 leaf = self._first_leaf(cname)
+                if leaf:
+                    return leaf
+            elif child:
+                return cname
+        return None
+
+    def _last_leaf(self, container_name: str) -> str | None:
+        """Find the last leaf (non-container) child of a container.
+        
+        For flow-v containers, this is the bottom-most child.
+        For flow-h containers, this is the right-most child.
+        """
+        obj = self.objects.get(container_name)
+        if not obj or not obj.children:
+            return None
+        for cname in reversed(obj.children):
+            child = self.objects.get(cname)
+            if child and child.obj_type == ObjType.CONTAINER:
+                leaf = self._last_leaf(cname)
                 if leaf:
                     return leaf
             elif child:

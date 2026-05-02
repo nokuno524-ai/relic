@@ -206,35 +206,36 @@ class ArrowRouter:
             # L-bend: vertical first, then horizontal → TikZ |-
             return [Waypoint(type="l-bend-v")] 
 
-        # Both L-bends blocked — use Z-bend (3 segments)
+        # Both L-bends blocked — use Z-bend via intermediate connector
+        # Compute escape offsets relative to source/target anchors
         max_obs_top = max(obs.top for obs in obstacles) + _ESCAPE_PADDING + 2.0
         min_obs_bottom = min(obs.bottom for obs in obstacles) - _ESCAPE_PADDING - 2.0
 
-        # Determine if going above or below
-        above_y = max_obs_top
-        below_y = min_obs_bottom
+        # In y-down coords: 'top' (y+h/2) is visual bottom, 'bottom' (y-h/2) is visual top
+        # 'above' the obstacle = lower y (visual top side) = min_obs_bottom
+        # 'below' the obstacle = higher y (visual bottom side) = max_obs_top
+        above_y = min_obs_bottom  # visual above (lower y in y-down)
+        below_y = max_obs_top     # visual below (higher y in y-down)
         go_above = True
 
-        # Try Z-bend going above
+        # Try Z-bend going above (visual above = lower y)
         seg1_clear = not any(self._line_intersects_box((sx, sy), (sx, above_y), obs) for obs in obstacles)
         seg2_clear = not any(self._line_intersects_box((sx, above_y), (ex, above_y), obs) for obs in obstacles)
         seg3_clear = not any(self._line_intersects_box((ex, above_y), (ex, ey), obs) for obs in obstacles)
         if not (seg1_clear and seg2_clear and seg3_clear):
-            # Try Z-bend going below
+            # Try Z-bend going below (visual below = higher y)
             seg1_clear = not any(self._line_intersects_box((sx, sy), (sx, below_y), obs) for obs in obstacles)
             seg2_clear = not any(self._line_intersects_box((sx, below_y), (ex, below_y), obs) for obs in obstacles)
             seg3_clear = not any(self._line_intersects_box((ex, below_y), (ex, ey), obs) for obs in obstacles)
             go_above = False
 
-        # Compute offset from source escape point
         detour_y = above_y if go_above else below_y
-        # offset relative to source's escape point y
+        # offset relative to source escape point
         y_off = detour_y - sy
 
-        # Z-bend: escape from source, go horizontal at detour_y, then down to target
+        # Generate Z-bend waypoints: source anchor → escape point → -| → target
         return [
-            Waypoint(type="corner", ref_object=src_name, x_offset=0.0, y_offset=y_off),
-            Waypoint(type="corner", ref_object=tgt_name, x_offset=0.0, y_offset=y_off),
+            Waypoint(type="z-bend-escape", ref_object=src_name, y_offset=y_off),
         ]
 
     def _route_bezier(
@@ -273,12 +274,28 @@ class ArrowRouter:
 
         # Express as offset from midpoint between source and target anchors
         if src_name and tgt_name:
+            # For primarily vertical paths, use vertical control point offset
+            # For primarily horizontal, use horizontal
+            if abs(dy) > abs(dx):
+                # Vertical: control point should offset vertically
+                ctrl_offset_x = 0.0
+                ctrl_offset_y = perp_y * offset
+                # Use the sign of dy to determine direction
+                if abs(ctrl_offset_y) < 1.0:
+                    ctrl_offset_y = offset if dy >= 0 else -offset
+            else:
+                # Horizontal: control point should offset horizontally
+                ctrl_offset_x = perp_x * offset
+                ctrl_offset_y = 0.0
+                if abs(ctrl_offset_x) < 1.0:
+                    ctrl_offset_x = offset if dx >= 0 else -offset
+
             return [Waypoint(
                 type="control",
                 mid_source=src_name,
                 mid_target=tgt_name,
-                x_offset=perp_x * offset,
-                y_offset=perp_y * offset,
+                x_offset=ctrl_offset_x,
+                y_offset=ctrl_offset_y,
                 x=ctrl_x, y=ctrl_y,
             )]
 
