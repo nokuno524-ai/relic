@@ -986,8 +986,9 @@ class RankResolver:
                 continue
             # Compute the desired position for the container from the constraint
             if c.target_anchor == "top" and c.source_anchor == "bottom":
-                # target.top = source.bottom + offset
-                desired_top = src.get_anchor("bottom") + _offset_to_mm(c.offset, c.offset_unit)
+                # target.top = source.bottom - gap (y-down: below means more negative)
+                gap_mm = abs(_offset_to_mm(c.offset, c.offset_unit))
+                desired_top = src.get_anchor("bottom") - gap_mm
                 current_top = tgt.get_anchor("top")
                 shift_y = desired_top - current_top
                 if abs(shift_y) > 0.1:
